@@ -11,11 +11,16 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from bs4 import BeautifulSoup
 import undetected_chromedriver as uc
 
+# =========================
+# CONFIG
+# =========================
+EXCEL_PATH = '/Users/zachklopping/Desktop/List 25/MHT/Scrapes/Combined Data/Download_JPE_2000-2025.xlsx'
+download_folder = '/Users/zachklopping/Desktop/List 25/MHT/Scrapes/Scraped Papers/JPE Scraped Papers'
+os.makedirs(download_folder, exist_ok=True)
 
-# Setup download folder
-download_folder = "/Users/zachklopping/Desktop/List 25/List Scraping Project/JPE Scraped Papers"
-
+# =========================
 # Chrome options
+# =========================
 options = uc.ChromeOptions()
 profile = {
     "plugins.plugins_list": [{"enabled": False, "name": "Chrome PDF Viewer"}],
@@ -28,89 +33,124 @@ options.add_experimental_option("prefs", profile)
 # Start undetected Chrome driver
 driver = uc.Chrome(options=options)
 
-# Load journal data
-journal_data = pd.read_excel(
-    "/Users/zachklopping/Desktop/GitHub/JL_Summer_25/Scraping_Project/Data_fix/Combined Data/JPE_2000-2025.xlsx"
-)
+# =========================
+# Load and filter data
+# =========================
+journal_data = pd.read_excel(EXCEL_PATH)
 
-# Step 1: Find the cover date column
-journal_data['coverDate'] = pd.to_datetime(journal_data['coverDate'], errors='coerce')
+# Ensure 'downloaded' column exists
+if "downloaded" not in journal_data.columns:
+    journal_data["downloaded"] = 0
 
-# Step 2: Define the threshold date
-threshold_date = pd.to_datetime("2022-01-01")
+# Only process rows where downloaded == 0
+to_download = journal_data[journal_data["downloaded"].fillna(0).astype(int) == 0]
 
-# Step 3: Filter the DataFrame
-journal_data = journal_data[journal_data['coverDate'] >= threshold_date]
-
-# Main loop
-for index, row in journal_data.iterrows():
-    print(f"\nProcessing article {index}: {row['title']}")
-
-    driver.get(row['url'])
-
-    # Try to click cookie banner button
-    try:
-        WebDriverWait(driver, 5).until(
-            EC.element_to_be_clickable((By.XPATH, '//*[@id="cookie-notice"]/p[3]/a[2]'))
-        ).click()
-        print("✅ Cookie banner accepted.")
+# =========================
+# Helpers
+# =========================
+def wait_for_pdf(download_dir: str, timeout: int = 180) -> str | None:
+    """Wait until a PDF is present and .crdownload files are gone."""
+    start = time.time()
+    while time.time() - start < timeout:
+        # If any .crdownload exists, keep waiting
+        if any(name.endswith(".crdownload") for name in os.listdir(download_dir)):
+            time.sleep(1)
+            continue
+        # Find newest PDF
+        pdfs = [os.path.join(download_dir, f)
+                for f in os.listdir(download_dir)
+                if f.lower().endswith(".pdf")]
+        if pdfs:
+            return max(pdfs, key=os.path.getctime)
         time.sleep(1)
-    except (TimeoutException, NoSuchElementException):
-        print("ℹ️ No cookie banner appeared.")
+    return None
 
-    time.sleep(5)
+def clean_title_for_filename(title: str) -> str:
+    s = re.sub(r"[^A-Za-z0-9]+", "_", str(title)).strip("_")
+    return s
 
-    # Parse the page and look for the PDF link
-    html = driver.page_source
-    soup = BeautifulSoup(html, "html.parser")
-
+# =========================
+# Main loop
+# =========================
+for orig_idx, row in to_download.iterrows():
     try:
-        pdf_link_tag = soup.find("a", href=re.compile(r"^/doi/epdf/"))
-        if not pdf_link_tag:
-            raise ValueError("No se encontró el botón con enlace al epdf.")
+        title = row.get("title", f"idx_{orig_idx}")
+        url = row.get("url")
+        if not isinstance(url, str) or not url.startswith("http"):
+            print(f"[{orig_idx}] Skipping: bad/missing URL for '{title}'")
+            continue
 
-        pdf_url = "https://www.journals.uchicago.edu" + pdf_link_tag["href"]
-        print(f"🔗 ePDF URL found: {pdf_url}")
-        driver.get(pdf_url)
+        print(f"\n[{orig_idx}] Processing: {title}")
+        driver.get(url)
+
+        # Accept cookie banner if it appears
+        try:
+            WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, '//*[@id="cookie-notice"]/p[3]/a[2]'))
+            ).click()
+            print("✅ Cookie banner accepted.")
+            time.sleep(1)
+        except (TimeoutException, NoSuchElementException):
+            print("ℹ️ No cookie banner appeared.")
+
+        time.sleep(5)
+
+        # Parse page for ePDF link
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        try:
+            pdf_link_tag = soup.find("a", href=re.compile(r"^/doi/epdf/"))
+            if not pdf_link_tag:
+                raise ValueError("No ePDF button found.")
+            pdf_url = "https://www.journals.uchicago.edu" + pdf_link_tag["href"]
+            print(f"🔗 ePDF URL found: {pdf_url}")
+            driver.get(pdf_url)
+        except Exception as e:
+            print(f"❌ Could not find ePDF link: {e}")
+            continue
+
+        # Click download menu and then direct download
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.invisibility_of_element_located((By.CLASS_NAME, "overlay-screen"))
+            )
+            WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, '//*[@id="new-download-btn"]'))
+            ).click()
+            print("✅ Opened download menu.")
+
+            WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, '//*[@id="app-navbar"]/div[3]/div[3]/div/div[1]/div/ul[1]/li[1]/a'))
+            ).click()
+            print("✅ Clicked direct download button.")
+        except Exception as e:
+            print(f"❌ Error clicking download buttons: {e}")
+            continue
+
+        # Wait for PDF to be fully downloaded
+        downloaded_path = wait_for_pdf(download_folder, timeout=180)
+        if not downloaded_path or not os.path.exists(downloaded_path):
+            print(f"[{orig_idx}] ❌ Download failed or timed out.")
+            continue
+
+        # Rename PDF
+        safe_title = clean_title_for_filename(title)
+        new_filename = f"JPE_{safe_title}.pdf"
+        target_path = os.path.join(download_folder, new_filename)
+        shutil.move(downloaded_path, target_path)
+        print(f"[{orig_idx}] ✅ Saved as {target_path}")
+
+        # Mark as downloaded and save to Excel
+        journal_data.at[orig_idx, "downloaded"] = 1
+        journal_data.to_excel(EXCEL_PATH, index=False)
+
+        time.sleep(2)
+
     except Exception as e:
-        print(f"❌ Could not find ePDF link for article {index}: {e}")
+        print(f"[{orig_idx}] ❌ Error: {e}")
         continue
 
-    try:
-        WebDriverWait(driver, 15).until(
-            EC.invisibility_of_element_located((By.CLASS_NAME, "overlay-screen"))
-        )
-        WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, '//*[@id="new-download-btn"]'))
-        ).click()
-        print("✅ Opened download menu.")
-
-        WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, '//*[@id="app-navbar"]/div[3]/div[3]/div/div[1]/div/ul[1]/li[1]/a'))
-        ).click()
-        print("✅ Clicked direct download button.")
-    except Exception as e:
-        print(f"❌ Error trying to download from epdf view: {e}")
-        continue
-
-    time.sleep(20) 
-
-    article_title = re.sub('[^A-Za-z0-9]+', '_', row['title'])
-
-    try:
-        filename = max(
-            [os.path.join(download_folder, f) for f in os.listdir(download_folder)],
-            key=os.path.getctime
-        )
-        new_filename = os.path.join(download_folder, f"JPE_{index}_{article_title}.pdf")
-        shutil.move(filename, new_filename)
-        print(f"✅ Saved as {new_filename}")
-    except Exception as e:
-        print(f"❌ Error moving/renaming file for article {index}: {e}")
-
-    time.sleep(10)
-
+# =========================
+# Cleanup
+# =========================
 driver.quit()
 print("\n🎉 All done.")
-
-

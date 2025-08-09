@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import time
 import os
 import shutil
@@ -10,17 +11,19 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 
-# INSTANTIATE THE SELENIUM DRIVER.
+# =========================
+# CONFIG
+# =========================
+EXCEL_PATH = '/Users/zachklopping/Desktop/List 25/MHT/Scrapes/Combined Data/Download_AER_2000-2025.xlsx'
+download_folder = '/Users/zachklopping/Desktop/List 25/MHT/Scrapes/Scraped Papers/AER Scraped Papers'
+chromedriver_path = '/Users/zachklopping/Desktop/List 25/MHT/Scrapes/chromedriver-mac-arm64/chromedriver'
 
-options = webdriver.ChromeOptions()
+os.makedirs(download_folder, exist_ok=True)
 
-# ----------------------------------------------
-# CHANGE DOWNLOAD FOLDER TO MATCH WHERE YOU WANT THE FILES TO DOWNLOAD TO
-# ----------------------------------------------
-
-download_folder = '/Users/zachklopping/Desktop/List 25/List Scraping Project/AER Scraped Papers'
-
-profile = {
+# =========================
+# SELENIUM SETUP
+# =========================
+prefs = {
     "plugins.plugins_list": [{"enabled": False, "name": "Chrome PDF Viewer"}],
     "download.default_directory": download_folder,
     "plugins.always_open_pdf_externally": True,
@@ -28,100 +31,129 @@ profile = {
 }
 
 options = Options()
-options.add_experimental_option("prefs", profile)
+options.add_experimental_option("prefs", prefs)
+# Uncomment if you want to run headless:
+# options.add_argument("--headless=new")
 
-# ----------------------------------------------
-# DOWNLOAD CHROME DRIVER AND PUT IT IN A FOLDER, THEN CHANGE
-# TO WHERE YOU PUT THE CHROMEDRIVER IN.
-# LINK: https://chromedriver.chromium.org/downloads
-# ----------------------------------------------
+service = Service(chromedriver_path)
 
-service = Service('/Users/zachklopping/Desktop/List 25/List Scraping Project/chromedriver-mac-arm64/chromedriver')
+# =========================
+# LOAD DATA & FILTER
+# =========================
+journal_data = pd.read_excel(EXCEL_PATH)
 
-# READ THE EXCEL FOR THE JOURNAL TO RETRIEVE THE LINKS
+# Ensure the 'downloaded' column exists (treat missing as 0)
+if 'downloaded' not in journal_data.columns:
+    journal_data['downloaded'] = 0
 
-# ----------------------------------------------
-# CHANGE DIRECTORY TO MATCH LOCATION OF EXCEL FILE.
-# ----------------------------------------------
-journal_data = pd.read_excel('/Users/zachklopping/Desktop/GitHub/JL_Summer_25/Scraping_Project/Data_fix/Combined Data/AER_2000-2025.xlsx')
+# Only process rows where downloaded == 0 (treat NaN as 0)
+to_download = journal_data[journal_data['downloaded'].fillna(0).astype(int) == 0]
 
-# Step 1: Find the cover date column
-journal_data['coverDate'] = pd.to_datetime(journal_data['coverDate'], errors='coerce')
+# =========================
+# HELPERS
+# =========================
+def wait_for_pdf(download_dir: str, timeout: int = 120) -> str | None:
+    """
+    Waits for a PDF to appear in download_dir and for any .crdownload to finish.
+    Returns the full path to the newest PDF, or None on timeout.
+    """
+    start = time.time()
+    newest_pdf = None
 
-# Step 2: Define the threshold date
-threshold_date = pd.to_datetime("2022-01-01")
+    while time.time() - start < timeout:
+        # Exclude temp files
+        pdfs = [os.path.join(download_dir, f) for f in os.listdir(download_dir)
+                if f.lower().endswith('.pdf')]
+        # If any .crdownload exists, keep waiting
+        crs = [f for f in os.listdir(download_dir) if f.endswith('.crdownload')]
+        if pdfs and not crs:
+            newest_pdf = max(pdfs, key=os.path.getctime)
+            break
+        time.sleep(1)
 
-# Step 3: Filter the DataFrame
-journal_data = journal_data[journal_data['coverDate'] >= threshold_date]
+    return newest_pdf
 
-journal_data.reset_index()
+def clean_title_for_filename(title: str) -> str:
+    # Keep it simple and safe; collapse non-alnum to underscore
+    s = re.sub(r'[^A-Za-z0-9]+', '_', str(title)).strip('_')
+    # Avoid super long filenames
+    return s
 
-# -------------------
-# MAIN LOOP
-# -------------------
-
+# =========================
+# MAIN
+# =========================
 driver = webdriver.Chrome(service=service, options=options)
 
-for index, row in journal_data.iterrows():
+for orig_idx, row in to_download.iterrows():
     try:
-        print(f"Processing index {index}: {row['title']}")
+        title = row.get('title', f'idx_{orig_idx}')
+        url = row.get('url')
+        if not isinstance(url, str) or not url.startswith('http'):
+            print(f"[{orig_idx}] Skipping: bad/missing URL for '{title}'")
+            continue
 
-        # 1. Open article page
-        driver.get(row['url'])
+        print(f"[{orig_idx}] Processing: {title}")
+        driver.get(url)
         time.sleep(5)
 
-        # 2. Parse with BeautifulSoup
         soup = BeautifulSoup(driver.page_source, features="lxml")
-        m = soup.find_all("section", {"primary article-detail journal-article"})
 
-        if not m:
-            print("Skipping: article-detail section not found.")
+        # Find the main article section (robust CSS selector)
+        article_section = soup.select_one("section.primary.article-detail.journal-article")
+        if not article_section:
+            # fallback: try any section containing a download button
+            article_section = soup.find('section')
+        if not article_section:
+            print(f"[{orig_idx}] Skipping: article-detail section not found.")
             continue
 
-        links = m[0].find_all('a', {'class': 'button'})
-        if not links:
-            print("Skipping: no download button found.")
+        # Find a download button/link
+        # Often buttons have class 'button' and the href points to the PDF or PDF page.
+        link = None
+        for a in article_section.find_all('a', href=True):
+            text = (a.get_text(strip=True) or '').lower()
+            classes = ' '.join(a.get('class', [])).lower()
+            href = a['href']
+            # Heuristics to find the pdf download action
+            if ('pdf' in text) or ('download' in text) or ('pdf' in href) or ('button' in classes):
+                link = a
+                break
+
+        if not link:
+            print(f"[{orig_idx}] Skipping: no download link found.")
             continue
 
-        tail = links[0].get('href')
+        tail = link.get('href', '')
         if not tail:
-            print("Skipping: button has no href.")
+            print(f"[{orig_idx}] Skipping: link has no href.")
             continue
 
-        # 3. Visit the actual PDF download page
-        pdf_url = 'https://www.aeaweb.org' + tail
+        pdf_url = tail if tail.startswith('http') else ('https://www.aeaweb.org' + tail)
         driver.get(pdf_url)
         time.sleep(4)
 
-        # 4. Clean title for filename
-        article_title = re.sub('[^A-Za-z0-9]+', '_', row['title'])
-
-        # 5. Wait for download to appear
-        timeout = 60
-        start_time = time.time()
-        filename = None
-
-        while time.time() - start_time < timeout:
-            pdfs = [f for f in os.listdir(download_folder) if f.endswith(".pdf")]
-            if pdfs:
-                filename = max([os.path.join(download_folder, f) for f in pdfs], key=os.path.getctime)
-                break
-            time.sleep(1)
-
-        if not filename:
-            print("Download failed or timed out.")
+        # Wait for the PDF to fully download
+        filename = wait_for_pdf(download_folder, timeout=180)
+        if not filename or not os.path.exists(filename):
+            print(f"[{orig_idx}] Download failed or timed out.")
             continue
 
-        # 6. Rename downloaded file
-        new_filename = f"AER_{index}_{article_title}.pdf"
-        shutil.move(filename, os.path.join(download_folder, new_filename))
-        print(f"Downloaded: {new_filename}")
+        # Rename the downloaded file
+        article_title = clean_title_for_filename(title)
+        new_filename = f"AER_{article_title}.pdf"
+        target_path = os.path.join(download_folder, new_filename)
+        shutil.move(filename, target_path)
+        print(f"[{orig_idx}] Downloaded: {new_filename}")
 
-        time.sleep(10)
+        # Mark as downloaded and persist
+        journal_data.at[orig_idx, 'downloaded'] = 1
+        journal_data.to_excel(EXCEL_PATH, index=False)
+
+        time.sleep(2)
 
     except Exception as e:
-        print(f"Error at index {index}: {e}")
+        print(f"[{orig_idx}] Error: {e}")
         continue
 
 driver.quit()
-
+print("Done.")
