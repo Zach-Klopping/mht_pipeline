@@ -1,0 +1,26 @@
+# RStudio project files
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+
+# macOS system files
+.DS_Store
+
+# Python caches (if any)
+__pycache__/
+*.pyc
+
+# Large data or output files
+*.mp4
+*.pdf
+*.xlsx
+*.csv
+*.json
+*.xml
+
+# Ignore common image formats
+*.png
+*.jpg
+*.jpeg
+*.gif
