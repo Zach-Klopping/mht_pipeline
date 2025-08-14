@@ -112,6 +112,4 @@ for year in range(start_year, end_year + 1):
 df = pd.DataFrame(articles)
 
 # Save to a new file
-df.to_excel("/Users/zachklopping/Desktop/GitHub/JL_Summer_25/Scraping Project/Data_fix/Combined Data/ReSTUD_2000-2025.xlsx", index=False)
-
-print(f"Saved {len(df)} articles to 'ReSTUD_2023_2025.xlsx'.")
+df.to_excel("/Users/zachklopping/Desktop/ReSTUD_2000-2025.xlsx", index=False)
