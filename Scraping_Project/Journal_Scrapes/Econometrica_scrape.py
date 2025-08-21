@@ -43,8 +43,16 @@ journal_data = pd.read_excel(EXCEL_PATH)
 if 'downloaded' not in journal_data.columns:
     journal_data['downloaded'] = 0
 
+# Parse coverDate and filter from Mar 1, 2015 onward
+journal_data['coverDate'] = pd.to_datetime(
+    journal_data['coverDate'], errors='coerce', infer_datetime_format=True
+)
+
+cutoff = pd.Timestamp('2015-03-01')
+eligible = journal_data[journal_data['coverDate'].notna() & (journal_data['coverDate'] >= cutoff)]
+
 # Only rows where downloaded == 0 (treat NaN as 0)
-to_download = journal_data[journal_data['downloaded'].fillna(0).astype(int) == 0]
+to_download = eligible[eligible['downloaded'].fillna(0).astype(int) == 0]
 
 # =========================
 # Helpers

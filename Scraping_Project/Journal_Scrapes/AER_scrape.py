@@ -29,7 +29,6 @@ prefs = {
 }
 options.add_experimental_option("prefs", prefs)
 
-# optional stealth hardening
 options.add_argument("--disable-blink-features=AutomationControlled")
 
 driver = uc.Chrome(options=options)
@@ -39,42 +38,30 @@ driver = uc.Chrome(options=options)
 # =========================
 journal_data = pd.read_excel(EXCEL_PATH)
 
-# Ensure the 'downloaded' column exists (treat missing as 0)
 if 'downloaded' not in journal_data.columns:
     journal_data['downloaded'] = 0
 
-# Only process rows where downloaded == 0 (treat NaN as 0)
 to_download = journal_data[journal_data['downloaded'].fillna(0).astype(int) == 0]
 
 # =========================
 # HELPERS
 # =========================
 def wait_for_pdf(download_dir: str, timeout: int = 120) -> str | None:
-    """
-    Waits for a PDF to appear in download_dir and for any .crdownload to finish.
-    Returns the full path to the newest PDF, or None on timeout.
-    """
     start = time.time()
     newest_pdf = None
-
     while time.time() - start < timeout:
-        # Exclude temp files
         pdfs = [os.path.join(download_dir, f) for f in os.listdir(download_dir)
                 if f.lower().endswith('.pdf')]
-        # If any .crdownload exists, keep waiting
         crs = [f for f in os.listdir(download_dir) if f.endswith('.crdownload')]
         if pdfs and not crs:
             newest_pdf = max(pdfs, key=os.path.getctime)
             break
         time.sleep(1)
-
     return newest_pdf
 
 def clean_title_for_filename(title: str) -> str:
-    # Keep it simple and safe; collapse non-alnum to underscore
     s = re.sub(r'[^A-Za-z0-9]+', '_', str(title)).strip('_')
-    # Avoid super long filenames
-    return s
+    return s or "untitled"
 
 # =========================
 # MAIN
@@ -92,55 +79,43 @@ try:
             driver.get(url)
             time.sleep(5)
 
-            soup = BeautifulSoup(driver.page_source, features="lxml")
+            soup = BeautifulSoup(driver.page_source, "lxml")
 
-            # Find the main article section (robust CSS selector)
+            # Find the main article section
             article_section = soup.select_one("section.primary.article-detail.journal-article")
-            if not article_section:
-                # fallback: try any section containing a download button
-                article_section = soup.find('section')
             if not article_section:
                 print(f"[{orig_idx}] Skipping: article-detail section not found.")
                 continue
 
-            # Find a download button/link
-            link = None
-            for a in article_section.find_all('a', href=True):
-                text = (a.get_text(strip=True) or '').lower()
-                classes = ' '.join(a.get('class', [])).lower()
-                href = a['href']
-                if ('pdf' in text) or ('download' in text) or ('pdf' in href) or ('button' in classes):
-                    link = a
-                    break
-
-            if not link:
-                print(f"[{orig_idx}] Skipping: no download link found.")
+            # Find <section class="download"> inside, then <a class="button">
+            download_section = article_section.select_one("section.download")
+            if not download_section:
+                print(f"[{orig_idx}] Skipping: no <section class=download> found.")
                 continue
 
-            tail = link.get('href', '')
-            if not tail:
-                print(f"[{orig_idx}] Skipping: link has no href.")
+            link = download_section.select_one("a.button")
+            if not link or not link.has_attr("href"):
+                print(f"[{orig_idx}] Skipping: no <a class=button> inside download section.")
                 continue
 
-            pdf_url = tail if tail.startswith('http') else ('https://www.aeaweb.org' + tail)
+            tail = link["href"]
+            pdf_url = tail if tail.startswith("http") else ("https://www.aeaweb.org" + tail)
+
             driver.get(pdf_url)
             time.sleep(4)
 
-            # Wait for the PDF to fully download
             filename = wait_for_pdf(download_folder, timeout=180)
             if not filename or not os.path.exists(filename):
                 print(f"[{orig_idx}] Download failed or timed out.")
                 continue
 
-            # Rename the downloaded file
             article_title = clean_title_for_filename(title)
             new_filename = f"AER_{article_title}.pdf"
             target_path = os.path.join(download_folder, new_filename)
             shutil.move(filename, target_path)
             print(f"[{orig_idx}] Downloaded: {new_filename}")
 
-            # Mark as downloaded and persist
-            journal_data.at[orig_idx, 'downloaded'] = 1
+            journal_data.at[orig_idx, "downloaded"] = 1
             journal_data.to_excel(EXCEL_PATH, index=False)
 
             time.sleep(2)
