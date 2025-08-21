@@ -12,7 +12,7 @@ import shutil
 import pymupdf  # keep as pymupdf
 
 # ========= CONFIG =========
-input_dir = "/Users/zachklopping/Desktop/List 25/MHT/QJE_New"
+input_dir = "/Users/zachklopping/Desktop/List 25/MHT/QJE copy"
 output_dir = os.path.join(input_dir, "renamed")
 prefix = "QJE_"
 dry_run = False
