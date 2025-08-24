@@ -24,11 +24,11 @@ TITLE_COL        = 'title'     # Excel column with article title
 FLAG_COL         = 'replication_package'  # 0 = needs download, 1 = done
 
 # ICPSR credentials (set here for simplicity)
-ICPSR_USER = "zachary-klopping@uiowa.edu"
-ICPSR_PASS = "PurpleRockies64$"
+# ICPSR_USER = "zachary-klopping@uiowa.edu"
+# ICPSR_PASS = "PurpleRockies64$"
 # Alternatively, use env vars:
-# ICPSR_USER = os.getenv("ICPSR_USER", "")
-# ICPSR_PASS = os.getenv("ICPSR_PASS", "")
+ICPSR_USER = os.getenv("ICPSR_USER", "")
+ICPSR_PASS = os.getenv("ICPSR_PASS", "")
 
 # =========================
 # SETUP

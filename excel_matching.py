@@ -7,10 +7,10 @@ from rapidfuzz import fuzz
 import numpy as np
 
 # ---------- Config ----------
-PDF_FOLDER = '/Users/zachklopping/Desktop/List 25/MHT/papers_pdfs/QJE'
-EXCEL_FILE = '/Users/zachklopping/Desktop/List 25/MHT/Fixed_Data/Cleaned_QJE_2000-2025.xlsx'
-OUT_EXCEL  = '/Users/zachklopping/Desktop/List 25/MHT/Fixed_Data/Downloaded_QJE_2000-2025.xlsx'
-UNMATCHED_PDFS_CSV = '/Users/zachklopping/Desktop/List 25/MHT/Fixed_Data/QJE_unmatched_pdfs.csv'
+PDF_FOLDER = '/Users/zachklopping/Desktop/List 25/MHT/papers_pdfs/RESTUD'
+EXCEL_FILE = '/Users/zachklopping/Desktop/List 25/MHT/Fixed_Data/Cleaned_RESTUD_2000-2025.xlsx'
+OUT_EXCEL  = '/Users/zachklopping/Desktop/List 25/MHT/Fixed_Data/Downloaded_RESTUD_2000-2025.xlsx'
+UNMATCHED_PDFS_CSV = '/Users/zachklopping/Desktop/List 25/MHT/Fixed_Data/RESTUD_unmatched_pdfs.csv'
 THRESHOLD = 90
 # ----------------------------
 
