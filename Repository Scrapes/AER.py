@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-# AER -> ICPSR replication package downloader
-# Procedural; UC Chrome; Excel write-back; robust "new download" waiter
-
 import os
 import time
 import shutil
