@@ -4,13 +4,44 @@ import time
 
 # Cleaning functions
 def extract_freetoread_label(obj):
-    if isinstance(obj, dict) and "value" in obj:
-        return ", ".join([entry.get('$', '') for entry in obj["value"]])
+    # Handles str, dict with "value" (str/list/dict), or list of dicts/strs
+    if not obj:
+        return ""
+    if isinstance(obj, str):
+        return obj
+
+    if isinstance(obj, list):
+        return ", ".join([(item.get("$", "") if isinstance(item, dict) else str(item)) for item in obj if item]) or ""
+
+    if isinstance(obj, dict):
+        v = obj.get("value")
+        if v is None:
+            # sometimes the payload is under "$" directly
+            return obj.get("$", "")
+        if isinstance(v, str):
+            return v
+        if isinstance(v, dict):
+            return v.get("$", "") or v.get("value", "")
+        if isinstance(v, list):
+            return ", ".join([(item.get("$", "") if isinstance(item, dict) else str(item)) for item in v if item]) or ""
     return ""
 
 def clean_authkeywords(obj):
+    # Scopus often returns {'author-keyword': [{'$', '...'}, ...]}
+    if not obj:
+        return ""
+    if isinstance(obj, str):
+        return obj
     if isinstance(obj, list):
-        return "; ".join([kw.get('$', '') for kw in obj])
+        return "; ".join([(kw.get("$", "") if isinstance(kw, dict) else str(kw)) for kw in obj if kw]) or ""
+    if isinstance(obj, dict):
+        items = obj.get("author-keyword") or obj.get("value") or obj.get("keywords") or []
+        if isinstance(items, str):
+            return items
+        if isinstance(items, dict):
+            return items.get("$", "") or items.get("value", "")
+        if isinstance(items, list):
+            return "; ".join([(kw.get("$", "") if isinstance(kw, dict) else str(kw)) for kw in items if kw]) or ""
     return ""
 
 # API configuration
@@ -29,9 +60,11 @@ end_year = 2025
 
 base_url = "https://api.elsevier.com/content/search/scopus"
 
-count = 25
+session = requests.Session()
+TIMEOUT = 30
+
+count = 50
 max_retries = 5
-sleep_time = 2
 articles = []
 
 for year in range(start_year, end_year + 1):
@@ -49,8 +82,6 @@ for year in range(start_year, end_year + 1):
             response = requests.get(base_url, headers=headers, params=params)
             if response.status_code == 200:
                 break
-            else:
-                time.sleep(sleep_time)
         else:
             print("Persistent error. Abandoning attempt.")
             break
@@ -106,12 +137,11 @@ for year in range(start_year, end_year + 1):
             })
 
         start += count
-        time.sleep(sleep_time)
 
 # Save results
 df = pd.DataFrame(articles)
 
 # Save to a new file
-df.to_excel("/Users/zachklopping/Desktop/GitHub/JL_Summer_25/Scraping Project/Data_fix/Combined Data/AER_2000-2025.xlsx", index=False)
+df.to_excel("/Users/zachklopping/Desktop/John List/MHT/Raw Excels/AER_2000-2025.xlsx", index=False)
 
 print(f"Saved {len(df)} articles to 'AER_2000_2025.xlsx'.")

@@ -2,8 +2,8 @@
 import pandas as pd
 
 # ========= CONFIG =========
-input_excel  = '/Users/zachklopping/Desktop/List 25/MHT/Raw_Excel/Download_AER_2000-2025.xlsx'    # path to your Excel file
-output_excel = '/Users/zachklopping/Desktop/List 25/MHT/Raw_Excel/Cleaned_AER_2000-2025.xlsx'   # path for saving the cleaned version
+input_excel  = '/Users/zachklopping/Desktop/John List/MHT/Raw Excels/ReSTUD_2000-2025.xlsx'   # path to your Excel file
+output_excel = '/Users/zachklopping/Desktop/John List/MHT/Cleaned Excels/Restud_2000-2025.xlsx'  # path for saving the cleaned version
 # ==========================
 
 # Load the Excel file
