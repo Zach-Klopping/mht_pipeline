@@ -9,7 +9,7 @@ import numpy as np
 # ---------- Config ----------
 PDF_FOLDER = '/Users/zachklopping/Desktop/John List/MHT/papers_pdfs/ECMA'
 EXCEL_FILE = '/Users/zachklopping/Desktop/John List/MHT/Cleaned Excels/Econometrica_2000-2025.xlsx'
-OUT_EXCEL  = '/Users/zachklopping/Desktop/John List/MHT/Fixed Data/Fully_Downloaded_Econometriac_2000-2025.xlsx'
+OUT_EXCEL  = '/Users/zachklopping/Desktop/John List/MHT/Fixed Data/Fully_Downloaded_Econometrica_2000-2025.xlsx'
 UNMATCHED_PDFS_CSV = '/Users/zachklopping/Desktop/John List/MHT/Fixed Data/Econometrica_unmatched_pdfs.csv'
 THRESHOLD = 90
 # ----------------------------
