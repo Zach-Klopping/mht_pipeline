@@ -11,8 +11,8 @@ import undetected_chromedriver as uc
 # =========================
 # CONFIG
 # =========================
-EXCEL_PATH = '/Users/zachklopping/Desktop/List 25/MHT/Scrapes/Combined Data/Download_AER_2000-2025.xlsx'
-download_folder = '/Users/zachklopping/Desktop/List 25/MHT/Scrapes/Scraped Papers/AER Scraped Papers'
+EXCEL_PATH = '/Users/zachklopping/Desktop/John List/MHT/Fixed Data/Fully_Downloaded_AER_2000-2025.xlsx'
+download_folder = '/Users/zachklopping/Desktop/John List/MHT/AER Scraped Papers'
 os.makedirs(download_folder, exist_ok=True)
 
 # =========================
@@ -31,7 +31,7 @@ options.add_experimental_option("prefs", prefs)
 
 options.add_argument("--disable-blink-features=AutomationControlled")
 
-driver = uc.Chrome(options=options)
+driver = uc.Chrome(options=options, version_main=139)  # 👈 match your Chrome major version
 
 # =========================
 # LOAD DATA & FILTER

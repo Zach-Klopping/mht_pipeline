@@ -1,30 +1,30 @@
+#!/usr/bin/env python3
 import os
-import shutil
-import pandas as pd
+import pymupdf  # install with: pip install pymupdf
 
-# ==== CONFIG ====
-CSV_PATH      = '/Users/zachklopping/Desktop/John List/MHT/Fixed Data/Econometrica_unmatched_pdfs.csv'         # CSV with a 'title' column
-SOURCE_FOLDER = '/Users/zachklopping/Desktop/John List/MHT/papers_pdfs/ECMA'     # where PDFs are now
-DEST_FOLDER   = '/Users/zachklopping/Desktop/John List/MHT/ECMA WE DONT WANT' # where to move them
+# ========== CONFIG ==========
+pdf_dir = '/Users/zachklopping/Desktop/John List/MHT/Bad/AER WE DONT WANT'# change to your folder
 
-# Make sure destination exists
-os.makedirs(DEST_FOLDER, exist_ok=True)
+# ========== SCRIPT ==========
+count_less_than_10 = 0
+total_pdfs = 0
 
-# Load titles (assume they include the .pdf extension)
-df = pd.read_csv(CSV_PATH)
-titles = df["pdf_file"].dropna().tolist()
+for fname in os.listdir(pdf_dir):
+    if not fname.lower().endswith(".pdf"):
+        continue
+    total_pdfs += 1
+    path = os.path.join(pdf_dir, fname)
 
-# Move matching PDFs
-moved_count = 0
-for title in titles:
-    src_path = os.path.join(SOURCE_FOLDER, title)
-    dest_path = os.path.join(DEST_FOLDER, title)
+    try:
+        doc = pymupdf.open(path)
+        n_pages = doc.page_count
+        doc.close()
 
-    if os.path.isfile(src_path):
-        shutil.move(src_path, dest_path)
-        print(f"✅ Moved: {title}")
-        moved_count += 1
-    else:
-        print(f"⚠️ Not found: {title}")
+        if n_pages < 10:
+            count_less_than_10 += 1
 
-print(f"\nDone! {moved_count} files moved to {DEST_FOLDER}")
+    except Exception as e:
+        print(f"⚠️ Could not read {fname}: {e}")
+
+print(f"Total PDFs scanned: {total_pdfs}")
+print(f"PDFs with < 10 pages: {count_less_than_10}")

@@ -14,8 +14,8 @@ import undetected_chromedriver as uc
 # =========================
 # CONFIG
 # =========================
-EXCEL_PATH = '/Users/zachklopping/Desktop/List 25/MHT/Scrapes/Combined Data/Download_ECMA_2000-2025.xlsx'
-download_folder = '/Users/zachklopping/Desktop/List 25/MHT/Scrapes/Scraped Papers/ECMA Scraped Papers'
+EXCEL_PATH = '/Users/zachklopping/Desktop/John List/MHT/Fixed Data/Fully_Downloaded_Econometrica_2000-2025.xlsx'
+download_folder = '/Users/zachklopping/Desktop/John List/MHT/ECMA Old Scraped Papers'
 os.makedirs(download_folder, exist_ok=True)
 
 # =========================
@@ -31,7 +31,7 @@ profile = {
 options.add_experimental_option("prefs", profile)
 
 # Start undetected Chrome driver
-driver = uc.Chrome(options=options)
+driver = uc.Chrome(options=options, version_main=139)  # 👈 match your Chrome major version
 
 # =========================
 # Load and filter data
@@ -42,16 +42,19 @@ journal_data = pd.read_excel(EXCEL_PATH)
 if 'downloaded' not in journal_data.columns:
     journal_data['downloaded'] = 0
 
-# Parse coverDate and filter before Mar 1, 2015
-journal_data['coverDate'] = pd.to_datetime(
-    journal_data['coverDate'], errors='coerce', infer_datetime_format=True
-)
+# # Parse coverDate and filter before Mar 1, 2015
+# journal_data['coverDate'] = pd.to_datetime(
+#     journal_data['coverDate'], errors='coerce', infer_datetime_format=True
+# )
 
-cutoff = pd.Timestamp('2015-03-01')
-eligible = journal_data[journal_data['coverDate'].notna() & (journal_data['coverDate'] < cutoff)]
+# cutoff = pd.Timestamp('2015-03-01')
+# eligible = journal_data[journal_data['coverDate'].notna() & (journal_data['coverDate'] < cutoff)]
 
-# Only rows where downloaded == 0 (treat NaN as 0)
-to_download = eligible[eligible['downloaded'].fillna(0).astype(int) == 0]
+# # Only rows where downloaded == 0 (treat NaN as 0)
+# to_download = eligible[eligible['downloaded'].fillna(0).astype(int) == 0]
+
+to_download = journal_data[journal_data['downloaded'].fillna(0).astype(int) == 0]
+
 
 # =========================
 # Helpers
@@ -59,6 +62,33 @@ to_download = eligible[eligible['downloaded'].fillna(0).astype(int) == 0]
 def clean_title_for_filename(title: str) -> str:
     s = re.sub(r"[^A-Za-z0-9]+", "_", str(title)).strip("_")
     return s
+
+def wait_for_pdf(download_dir: str, timeout: int = 180) -> str | None:
+    """
+    Wait until a new PDF appears (ignoring finalized ECMA_*.pdf and partials).
+    Returns newest raw PDF path or None on timeout.
+    """
+    start = time.time()
+    while time.time() - start < timeout:
+        # If any partial downloads still present, wait
+        if any(f.endswith('.crdownload') for f in os.listdir(download_dir)):
+            time.sleep(1)
+            continue
+
+        pdfs = []
+        for f in os.listdir(download_dir):
+            if not f.lower().endswith('.pdf'):
+                continue
+            if f.startswith("ECMA_"):   # 👈 ignore already-renamed files
+                continue
+            pdfs.append(os.path.join(download_dir, f))
+
+        if pdfs:
+            return max(pdfs, key=os.path.getctime)  # newest raw PDF
+
+        time.sleep(1)
+    return None
+
 
 # =========================
 # Main loop
@@ -92,7 +122,6 @@ for orig_idx, row in to_download.iterrows():
             pdf_link_tag = soup.find(
                 "a",
                 href=re.compile(r"^/doi/epdf/"),
-                class_="button"   # or whatever the class is
             )
             pdf_url = "https://onlinelibrary.wiley.com" + pdf_link_tag["href"]
             print(f"🔗 ePDF URL found: {pdf_url}")
@@ -118,23 +147,9 @@ for orig_idx, row in to_download.iterrows():
             print(f"❌ Could not click direct PDF link: {e}")
             continue
 
-        # Wait for PDF to be fully downloaded (inline instead of function call)
-        start = time.time()
-        downloaded_path = None
-        while time.time() - start < 180:
-            # If any .crdownload exists, keep waiting
-            if any(name.endswith(".crdownload") for name in os.listdir(download_folder)):
-                time.sleep(1)
-                continue
-            # Find newest PDF
-            pdfs = [os.path.join(download_folder, f)
-                    for f in os.listdir(download_folder)
-                    if f.lower().endswith(".pdf")]
-            if pdfs:
-                downloaded_path = max(pdfs, key=os.path.getctime)
-                break
-            time.sleep(1)
-
+        # Wait for PDF to be fully downloaded
+        downloaded_path = wait_for_pdf(download_folder, timeout=180)
+        
         if not downloaded_path or not os.path.exists(downloaded_path):
             print(f"[{orig_idx}] ❌ Download failed or timed out.")
             continue

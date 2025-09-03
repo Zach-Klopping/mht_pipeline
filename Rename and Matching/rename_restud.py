@@ -12,7 +12,7 @@ import shutil
 import pymupdf  # use as pymupdf everywhere
 
 # ========= CONFIG =========
-input_dir = '/Users/zachklopping/Desktop/List 25/MHT/RESTUD_New'
+input_dir = '/Users/zachklopping/Desktop/John List/MHT/RESTUD Scraped Papers'
 output_dir = os.path.join(input_dir, "renamed")   # destination folder for renamed PDFs
 prefix = "ReSTUD_"     # prefix for renamed files
 dry_run = False        # True = only record actions, don't rename

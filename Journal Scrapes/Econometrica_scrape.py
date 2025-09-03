@@ -16,8 +16,8 @@ from bs4 import BeautifulSoup
 # =========================
 # CONFIG
 # =========================
-EXCEL_PATH = '/Users/zachklopping/Desktop/List 25/MHT/Scrapes/Combined Data/Download_ECMA_2000-2025.xlsx'
-download_folder = '/Users/zachklopping/Desktop/List 25/MHT/Scrapes/Scraped Papers/ECMA Scraped Papers'
+EXCEL_PATH = '/Users/zachklopping/Desktop/John List/MHT/Fixed Data/Fully_Downloaded_Econometrica_2000-2025.xlsx'
+download_folder = '/Users/zachklopping/Desktop/John List/MHT/ECMA Scraped Papers'
 os.makedirs(download_folder, exist_ok=True)
 
 # =========================
@@ -32,7 +32,7 @@ prefs = {
 options.add_experimental_option("prefs", prefs)
 # options.add_argument("--headless=new")  # uncomment if you want headless
 
-driver = uc.Chrome(options=options, headless=False)
+driver = uc.Chrome(options=options, version_main=139)  # 👈 match your Chrome major version
 
 # =========================
 # Load data & filter
@@ -43,37 +43,43 @@ journal_data = pd.read_excel(EXCEL_PATH)
 if 'downloaded' not in journal_data.columns:
     journal_data['downloaded'] = 0
 
-# Parse coverDate and filter from Mar 1, 2015 onward
-journal_data['coverDate'] = pd.to_datetime(
-    journal_data['coverDate'], errors='coerce', infer_datetime_format=True
-)
+# # Parse coverDate and filter from Mar 1, 2015 onward
+# journal_data['coverDate'] = pd.to_datetime(
+#     journal_data['coverDate'], errors='coerce', infer_datetime_format=True
+# )
 
-cutoff = pd.Timestamp('2015-03-01')
-eligible = journal_data[journal_data['coverDate'].notna() & (journal_data['coverDate'] >= cutoff)]
+# cutoff = pd.Timestamp('2016-01-01')
+# eligible = journal_data[journal_data['coverDate'].notna() & (journal_data['coverDate'] >= cutoff)]
 
-# Only rows where downloaded == 0 (treat NaN as 0)
-to_download = eligible[eligible['downloaded'].fillna(0).astype(int) == 0]
+# # Only rows where downloaded == 0 (treat NaN as 0)
+# to_download = eligible[eligible['downloaded'].fillna(0).astype(int) == 0]
+
+# Only rows where downloaded == 0
+to_download = journal_data[journal_data['downloaded'].fillna(0).astype(int) == 0]
 
 # =========================
 # Helpers
 # =========================
 def wait_for_pdf(download_dir: str, timeout: int = 180) -> str | None:
-    """
-    Waits up to `timeout` seconds for a PDF to appear in `download_dir`,
-    and for any .crdownload files to finish. Returns newest PDF path or None.
-    """
+    """Wait until a new PDF appears (ignoring finalized QJE_*.pdf and partials)."""
     start = time.time()
     while time.time() - start < timeout:
-        # if any .crdownload still present, keep waiting
-        if any(name.endswith('.crdownload') for name in os.listdir(download_dir)):
+        # If any partial downloads still present, wait
+        if any(f.endswith('.crdownload') for f in os.listdir(download_dir)):
             time.sleep(1)
             continue
-        # pick newest .pdf
-        pdfs = [os.path.join(download_dir, f)
-                for f in os.listdir(download_dir)
-                if f.lower().endswith('.pdf')]
+
+        pdfs = []
+        for f in os.listdir(download_dir):
+            if not f.lower().endswith('.pdf'):
+                continue
+            if f.startswith("ECMA_"):   # 👈 ignore already-renamed files
+                continue
+            pdfs.append(os.path.join(download_dir, f))
+
         if pdfs:
-            return max(pdfs, key=os.path.getctime)
+            return max(pdfs, key=os.path.getctime)  # newest raw PDF
+
         time.sleep(1)
     return None
 
@@ -159,7 +165,7 @@ for orig_idx, row in to_download.iterrows():
 
         # Rename file
         safe_title = clean_title_for_filename(title)
-        new_filename = f"Econometrica_{safe_title}.pdf"
+        new_filename = f"ECMA_{safe_title}.pdf"
         target_path = os.path.join(download_folder, new_filename)
         shutil.move(downloaded_path, target_path)
         print(f"[{orig_idx}] ✅ Saved: {target_path}")

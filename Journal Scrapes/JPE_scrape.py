@@ -14,8 +14,8 @@ import undetected_chromedriver as uc
 # =========================
 # CONFIG
 # =========================
-EXCEL_PATH = '/Users/zachklopping/Desktop/List 25/MHT/Scrapes/Combined Data/Download_JPE_2000-2025.xlsx'
-download_folder = '/Users/zachklopping/Desktop/List 25/MHT/Scrapes/Scraped Papers/JPE Scraped Papers'
+EXCEL_PATH = '/Users/zachklopping/Desktop/John List/MHT/Fixed Data/Fully_Downloaded_JPE_2000-2025.xlsx'
+download_folder = '/Users/zachklopping/Desktop/John List/MHT/JPE Scraped Papers'
 os.makedirs(download_folder, exist_ok=True)
 
 # =========================
@@ -31,7 +31,7 @@ profile = {
 options.add_experimental_option("prefs", profile)
 
 # Start undetected Chrome driver
-driver = uc.Chrome(options=options)
+driver = uc.Chrome(options=options, version_main=139)  # 👈 match your Chrome major version
 
 # =========================
 # Load and filter data
@@ -49,19 +49,25 @@ to_download = journal_data[journal_data["downloaded"].fillna(0).astype(int) == 0
 # Helpers
 # =========================
 def wait_for_pdf(download_dir: str, timeout: int = 180) -> str | None:
-    """Wait until a PDF is present and .crdownload files are gone."""
+    """Wait until a new PDF appears (ignoring finalized JPE_*.pdf and partials)."""
     start = time.time()
     while time.time() - start < timeout:
-        # If any .crdownload exists, keep waiting
-        if any(name.endswith(".crdownload") for name in os.listdir(download_dir)):
+        # If any partial downloads still present, wait
+        if any(f.endswith('.crdownload') for f in os.listdir(download_dir)):
             time.sleep(1)
             continue
-        # Find newest PDF
-        pdfs = [os.path.join(download_dir, f)
-                for f in os.listdir(download_dir)
-                if f.lower().endswith(".pdf")]
+
+        pdfs = []
+        for f in os.listdir(download_dir):
+            if not f.lower().endswith('.pdf'):
+                continue
+            if f.startswith("JPE_"):   # 👈 ignore already-renamed files
+                continue
+            pdfs.append(os.path.join(download_dir, f))
+
         if pdfs:
-            return max(pdfs, key=os.path.getctime)
+            return max(pdfs, key=os.path.getctime)  # newest raw PDF
+
         time.sleep(1)
     return None
 
