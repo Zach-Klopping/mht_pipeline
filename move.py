@@ -1,30 +1,18 @@
 #!/usr/bin/env python3
-import os
-import pymupdf  # install with: pip install pymupdf
+import pandas as pd
 
-# ========== CONFIG ==========
-pdf_dir = '/Users/zachklopping/Desktop/John List/MHT/Bad/AER WE DONT WANT'# change to your folder
+# ===== CONFIG =====
+input_excel  = '/Users/zachklopping/Desktop/John List/MHT/Fixed Data/Fully_Downloaded_Econometrica_2000-2025.xlsx'
+output_excel = '/Users/zachklopping/Desktop/John List/MHT/Cleaned Excels/1_Econometrica_2000-2025.xlsx'
+# ==================
 
-# ========== SCRIPT ==========
-count_less_than_10 = 0
-total_pdfs = 0
+# Load Excel
+df = pd.read_excel(input_excel)
 
-for fname in os.listdir(pdf_dir):
-    if not fname.lower().endswith(".pdf"):
-        continue
-    total_pdfs += 1
-    path = os.path.join(pdf_dir, fname)
+# Drop rows where 'downloaded' == 0
+df_clean = df[df['downloaded'] != 0]
 
-    try:
-        doc = pymupdf.open(path)
-        n_pages = doc.page_count
-        doc.close()
+# Save cleaned Excel
+df_clean.to_excel(output_excel, index=False)
 
-        if n_pages < 10:
-            count_less_than_10 += 1
-
-    except Exception as e:
-        print(f"⚠️ Could not read {fname}: {e}")
-
-print(f"Total PDFs scanned: {total_pdfs}")
-print(f"PDFs with < 10 pages: {count_less_than_10}")
+print(f"Done. Cleaned file saved to {output_excel}")

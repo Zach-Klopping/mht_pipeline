@@ -4,7 +4,7 @@ import shutil
 import pymupdf  # keep as pymupdf everywhere
 
 # ========= CONFIG (edit these paths) =========
-input_dir  = '/Users/zachklopping/Desktop/John List/MHT/papers_pdfs/ECMA_NEW_PRE_2015'
+input_dir  = '/Users/zachklopping/Desktop/John List/MHT/ECMA Old Scraped Papers'
 output_dir = os.path.join(input_dir, "renamed")
 prefix     = "ECMA_"          # filename prefix
 dry_run    = False            # True = record-only; do not move files
