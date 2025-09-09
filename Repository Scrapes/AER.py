@@ -161,19 +161,6 @@ def upload_file_to_dropbox(local_path: str, dropbox_folder: str, dest_name: str)
                     cursor.offset = f.tell()
     return dropbox_path
 
-def get_or_create_shared_link(dbx_path: str) -> str | None:
-    try:
-        meta = dbx.sharing_create_shared_link_with_settings(dbx_path)
-        return meta.url
-    except dropbox.exceptions.ApiError:
-        try:
-            links = dbx.sharing_list_shared_links(path=dbx_path, direct_only=True).links
-            if links:
-                return links[0].url
-        except Exception:
-            return None
-    return None
-
 # Ensure target folder exists in Dropbox
 ensure_dropbox_folder(DROPBOX_FOLDER)
 
@@ -291,11 +278,6 @@ for index, row in to_download[::-1].iterrows():
                 os.remove(new_path)
             except Exception:
                 pass
-
-            # (Optional) create or fetch shared link
-            link = get_or_create_shared_link(dropbox_dest)
-            if link:
-                print(f"🔗 Dropbox link: {link}")
 
             # Mark row complete
             journal_data.at[index, FLAG_COL] = 1
