@@ -110,7 +110,7 @@ if 'replication_package' not in journal_data.columns:
 # Only rows where replication_package == 0 and year >= 2012
 to_download = journal_data[
     (journal_data['replication_package'].fillna(0).astype(int) == 0)
-    & (journal_data['year'] >= 2012)
+    & (journal_data['year'] >= 2000)
 ]
 
 # =========================
