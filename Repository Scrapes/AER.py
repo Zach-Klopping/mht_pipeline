@@ -33,7 +33,7 @@ ICPSR_PASS = os.getenv("ICPSR_PASS", "")
 # =========================
 # DROPBOX CONFIG
 # =========================
-DROPBOX_TOKEN  = 'sl.u.AF8iDfgAuI8ZLoUQKQ_H6eJJfs4WOqtt4b5Yw47O_AktFqlv003Ff8aXQE_2yQbjnWNPuILD6S_XN5_WBOiizcmzvnPevEZ6M5TbWZDkKrknH4hPFge3BuvCk5n21xpzQo4jludXcxz9BFtgoADcrr-Hcr9daK-Jpouvck0f27iFDIU2brGZaburEp4U_EMFbnLIdEUqSpBhOgaPaJDmAFjgDctO8M1jbKG825pjDlz4N29BSGZdxMNf3t5PB37Dgy-d1pFXEmZ9WA-bV3HgoqSJxllIAcJkneeRNh65GtJtlki6irPgSZpBu-8M8b9KQekqHUgDDQ_v_r9rSHOdPssgHG9CFWHjZBJ_WZKeULTf50wVSUnghmg6c6VgBJmkjGcnmN7cm5db_e1jdsNMVMnYFDtvXXuMPiEDVbGU1X2XdtWQHIXUmqEcyIP-rNUGbKDo6qOmc1qfWGgTyceGV5b_a3c5u_8yVEojLxh50u_SgprIzVTTvd2KuckjeDxiyt3vLGiKw0Z3ufqD39BqWwj_EzNfCEPf-yxC0nNs09yCiQETRbK3cCwYKSPvkwbc_aWekhh_d2qA4XFVkpN4wZne5NwfdxMjycy4-q0l1ctDcEXTfIxw4eTssSSdfAoJwXLZYsT9chAjUuway8TQpOQ_Cu3LoBk9YJQ0Hm6_lC7Wc0IumvKsodMSqi37bE8LucbK-PfX_y8-uQFQqWLVhycogqCDDxldkV_MgtB6fUeiBFADbJDmNx_Hi8ypq9ls6XogFzpkmV9GHo0SdwPiL4yhC2iamnaYVDdFzlqoYFAJfLufhu8UwzfNr0OAlSp8grjLyTFBsNuPt6QFIMjYaWWSCbMiK5371Hc1NtQljCzuZiBPNFS470ggy4j8-FwouAwFr0mpKirKagrTZY-0E2sLqvnuRBmm70g5YCsQ8eaufC6WPszc9ndqoUaFm_2O2An-PwFByKEhMCsGzWKQAPSXbpGRNlJhPSN7cN6f74rZ5gXx4_Ix9wprC8NLKnQ1t99EKFwofigm3LkOnTxiCQD23KIXprYEtT3qPs93WSqzvaqpMC8zi6Kr7yZu2l3SbEYHRhGjdNGJAKAjbTw4U7qkh3rIo5DzGA6ry-W_lckb-dxraw00NcQGBOFJhipacpNqJlOkFZkDHaNQkYGErwcqL8N-u7gH6D3YZ2NLOTVfDLfdsFaKcU0hZfadaQKR3MrFpJgZ58x2M_MrM8i4txhKmXGvqSn4AM-TiEOuseKrzyK7aTgqrN68hXhF5kfMrwQ6YAugZ_zAfOmBsXzgTYTDGyhVPVZVyG7sQIGMXFoAEiyhWGplyltv41QJzXRme-UDJCzuTWT_0Z2jXDgW0mpxblHIfTaNL-b77CjKYfOZPLLmSPw5_2CNxvdiT5an45TPo71a09sSzt3iqSLX4IJxYUnmwOhK8FZOez9uv37l2A'
+DROPBOX_TOKEN = ''
 DROPBOX_FOLDER = "/MHT/AER Replication Packages"  # must start with "/"
 
 if not DROPBOX_TOKEN:
@@ -62,13 +62,7 @@ def sanitize_for_filename(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", str(s)).strip("_")
 
 def wait_for_download_since(dir_path, before_set, timeout=900):
-    """
-    Wait for a new download that started after we took `before_set`.
-    - Waits for a new *.crdownload or a new file to appear
-    - Then waits until all *.crdownload files disappear
-    - Then waits until the newest new file's size stabilizes
-    Returns: full path to the finished file, or None on timeout.
-    """
+    """Wait for a new file with one of the given extensions to appear (ignores partials and already-renamed AER_*.pdf)."""
     end = time.time() + timeout
 
     def list_all():

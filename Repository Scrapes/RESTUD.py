@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import os
 import time
-import json
 import shutil
 import pandas as pd
 import regex as re
@@ -16,16 +15,16 @@ import dropbox
 from dropbox.files import WriteMode
 
 # ======== CONFIG ========
-EXCEL_PATH = '/Users/zachklopping/Desktop/John List/MHT/Fixed Data/Fully_Downloaded_Restud_2000-2025.xlsx'
+EXCEL_PATH = '/Users/zachklopping/Desktop/John List/MHT/Fully_Downloaded_RESTUD_2000-2025.xlsx'
 
 # Chrome download sink (temporary)
 download_folder = '/Users/zachklopping/Desktop/John List/MHT/RESTUD Downloads'
 os.makedirs(download_folder, exist_ok=True)
 
 # ======== Dropbox (optional; set env var DROPBOX_TOKEN) ========
-DROPBOX_TOKEN = os.getenv('DROPBOX_TOKEN', '').strip()
+DROPBOX_TOKEN = ''
 
-DROPBOX_FOLDER_DATASET = "/MHT/RESTUD Replication Packages/Dataverse"
+DROPBOX_FOLDER_DATASET = "/MHT/RESTUD Replication Packages/Zenodo"
 DROPBOX_FOLDER_SUPP    = "/MHT/RESTUD Replication Packages/Supplementary"
 
 if not DROPBOX_TOKEN:
@@ -94,9 +93,22 @@ driver = uc.Chrome(options=options, version_main=139)  # match your Chrome major
 
 # ======== Data load ========
 journal_data = pd.read_excel(EXCEL_PATH)
-if "downloaded" not in journal_data.columns:
-    journal_data["downloaded"] = 0
-to_download = journal_data[journal_data["downloaded"].fillna(0).astype(int) == 0]
+
+# Ensure coverDate is datetime, then extract year
+journal_data['coverDate'] = pd.to_datetime(journal_data['coverDate'], errors='coerce')
+journal_data['year'] = journal_data['coverDate'].dt.year
+
+# Ensure 'replication_package' column exists
+if 'replication_package' not in journal_data.columns:
+    journal_data['replication_package'] = 0
+if 'supplementary_package' not in journal_data.columns:
+    journal_data['supplementary_package'] = 0
+
+# Only rows where replication_package == 0 and year >= 2012
+to_download = journal_data[
+    (journal_data['replication_package'].fillna(0).astype(int) == 0)
+    & (journal_data['year'] >= 2024)
+]
 
 # ======== Helpers ========
 def wait_for_file(download_dir: str, exts=(".zip",), timeout: int = 240) -> str | None:
@@ -187,15 +199,14 @@ for orig_idx, row in to_download.iterrows():
         das_url = None
         das_header = soup.find("h2", class_="dataavailabilitystatement-title")
         if not das_header:
-            # fallback to text match if class changes
             das_header = soup.find("h2", string=lambda t: t and "data availability" in t.lower())
 
         if das_header:
-            a_tag = das_header.find_next("a", href=True)
-            if a_tag and isinstance(a_tag.get("href"), str):
-                das_url = a_tag["href"]
-                if not das_url.startswith("http"):
-                    das_url = urljoin(driver.current_url, das_url)
+            for a in das_header.find_all_next("a", href=True, limit=10):
+                href = a["href"]
+                if href.startswith("https://doi.org"):
+                    das_url = href
+                    break
 
         if das_url:
             print(f"🔗 Data Availability link: {das_url}")
@@ -208,7 +219,7 @@ for orig_idx, row in to_download.iterrows():
                 )
                 dl_href = download_button.get_attribute("href")
                 print(f"📦 Zenodo archive link: {dl_href}")
-                download_button.click()
+                driver.get(dl_href)
 
                 # Wait for a ZIP to land
                 dataset_path = wait_for_file(download_folder, exts=(".zip",), timeout=240)
@@ -218,7 +229,7 @@ for orig_idx, row in to_download.iterrows():
                     shutil.move(dataset_path, renamed_path)
                     print(f"📥 Saved dataset: {renamed_path}")
                     upload_and_cleanup(renamed_path, DROPBOX_FOLDER_DATASET)
-                    journal_data.at[orig_idx, "downloaded"] = 1
+                    journal_data.at[orig_idx, "replication_package"] = 1
                     journal_data.to_excel(EXCEL_PATH, index=False)
                     time.sleep(1)
                     continue
@@ -252,19 +263,10 @@ for orig_idx, row in to_download.iterrows():
             print(f"[{orig_idx}] ⏭️ Skipping supplementary (not .zip): {supp_link}")
             continue
 
-        print(f"📦 Supplementary ZIP link: {supp_link}")
+        print(f"📦 Supplementary ZIP link")
 
-        # Click exact href; fallback to contains
-        try:
-            el = driver.find_element(By.XPATH, f"//a[@href={json.dumps(supp_link)}]")
-        except Exception:
-            el = driver.find_element(By.XPATH, f"//a[contains(@href, {json.dumps(supp_link.split('/')[-1])})]")
-
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-        try:
-            el.click()
-        except Exception:
-            driver.execute_script("arguments[0].click();", el)
+        # Go directly to the ZIP URL (no Selenium element click needed)
+        driver.get(supp_link)
 
         # Wait for zip, move, upload, mark complete
         dataset_path = wait_for_file(download_folder, exts=(".zip",), timeout=240)
@@ -273,8 +275,8 @@ for orig_idx, row in to_download.iterrows():
             renamed_path = os.path.join(download_folder, f"ReSTUD_{safe_title}.zip")
             shutil.move(dataset_path, renamed_path)
             print(f"📥 Saved dataset: {renamed_path}")
-            upload_and_cleanup(renamed_path, DROPBOX_FOLDER_DATASET)
-            journal_data.at[orig_idx, "downloaded"] = 1
+            upload_and_cleanup(renamed_path, DROPBOX_FOLDER_SUPP)
+            journal_data.at[orig_idx, 'supplementary_package'] = 1
             journal_data.to_excel(EXCEL_PATH, index=False)
             time.sleep(1)
             continue

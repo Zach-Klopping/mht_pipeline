@@ -5,15 +5,12 @@ import shutil
 import pandas as pd
 import regex as re
 import undetected_chromedriver as uc
-import json
-
+from urllib.parse import urljoin
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from bs4 import BeautifulSoup
-
-# Dropbox
 import dropbox
 from dropbox.files import WriteMode
 
@@ -22,16 +19,13 @@ from dropbox.files import WriteMode
 # =========================
 EXCEL_PATH = '/Users/zachklopping/Desktop/John List/MHT/Fully_Downloaded_JPE_2000-2025.xlsx'
 
-download_folder = '/Users/zachklopping/Desktop/John List/MHT/JPE Scrapes/JPE Dataverse'
+download_folder = '/Users/zachklopping/Desktop/John List/MHT/Scrapes/JPE Downloads'
 os.makedirs(download_folder, exist_ok=True)
-
-supplementary_folder = '/Users/zachklopping/Desktop/John List/MHT/JPE Scrapes/JPE Supplementary'
-os.makedirs(supplementary_folder, exist_ok=True)
 
 # =========================
 # DROPBOX CONFIG
 # =========================
-DROPBOX_TOKEN  = 'sl.u.AF8iDfgAuI8ZLoUQKQ_H6eJJfs4WOqtt4b5Yw47O_AktFqlv003Ff8aXQE_2yQbjnWNPuILD6S_XN5_WBOiizcmzvnPevEZ6M5TbWZDkKrknH4hPFge3BuvCk5n21xpzQo4jludXcxz9BFtgoADcrr-Hcr9daK-Jpouvck0f27iFDIU2brGZaburEp4U_EMFbnLIdEUqSpBhOgaPaJDmAFjgDctO8M1jbKG825pjDlz4N29BSGZdxMNf3t5PB37Dgy-d1pFXEmZ9WA-bV3HgoqSJxllIAcJkneeRNh65GtJtlki6irPgSZpBu-8M8b9KQekqHUgDDQ_v_r9rSHOdPssgHG9CFWHjZBJ_WZKeULTf50wVSUnghmg6c6VgBJmkjGcnmN7cm5db_e1jdsNMVMnYFDtvXXuMPiEDVbGU1X2XdtWQHIXUmqEcyIP-rNUGbKDo6qOmc1qfWGgTyceGV5b_a3c5u_8yVEojLxh50u_SgprIzVTTvd2KuckjeDxiyt3vLGiKw0Z3ufqD39BqWwj_EzNfCEPf-yxC0nNs09yCiQETRbK3cCwYKSPvkwbc_aWekhh_d2qA4XFVkpN4wZne5NwfdxMjycy4-q0l1ctDcEXTfIxw4eTssSSdfAoJwXLZYsT9chAjUuway8TQpOQ_Cu3LoBk9YJQ0Hm6_lC7Wc0IumvKsodMSqi37bE8LucbK-PfX_y8-uQFQqWLVhycogqCDDxldkV_MgtB6fUeiBFADbJDmNx_Hi8ypq9ls6XogFzpkmV9GHo0SdwPiL4yhC2iamnaYVDdFzlqoYFAJfLufhu8UwzfNr0OAlSp8grjLyTFBsNuPt6QFIMjYaWWSCbMiK5371Hc1NtQljCzuZiBPNFS470ggy4j8-FwouAwFr0mpKirKagrTZY-0E2sLqvnuRBmm70g5YCsQ8eaufC6WPszc9ndqoUaFm_2O2An-PwFByKEhMCsGzWKQAPSXbpGRNlJhPSN7cN6f74rZ5gXx4_Ix9wprC8NLKnQ1t99EKFwofigm3LkOnTxiCQD23KIXprYEtT3qPs93WSqzvaqpMC8zi6Kr7yZu2l3SbEYHRhGjdNGJAKAjbTw4U7qkh3rIo5DzGA6ry-W_lckb-dxraw00NcQGBOFJhipacpNqJlOkFZkDHaNQkYGErwcqL8N-u7gH6D3YZ2NLOTVfDLfdsFaKcU0hZfadaQKR3MrFpJgZ58x2M_MrM8i4txhKmXGvqSn4AM-TiEOuseKrzyK7aTgqrN68hXhF5kfMrwQ6YAugZ_zAfOmBsXzgTYTDGyhVPVZVyG7sQIGMXFoAEiyhWGplyltv41QJzXRme-UDJCzuTWT_0Z2jXDgW0mpxblHIfTaNL-b77CjKYfOZPLLmSPw5_2CNxvdiT5an45TPo71a09sSzt3iqSLX4IJxYUnmwOhK8FZOez9uv37l2A'
+DROPBOX_TOKEN = ''
 
 DROPBOX_FOLDER_DATASET = "/MHT/JPE Replication Packages/Dataverse"
 DROPBOX_FOLDER_SUPP    = "/MHT/JPE Replication Packages/Supplementary"
@@ -101,14 +95,15 @@ journal_data = pd.read_excel(EXCEL_PATH)
 journal_data['coverDate'] = pd.to_datetime(journal_data['coverDate'], errors='coerce')
 journal_data['year'] = journal_data['coverDate'].dt.year
 
-# Ensure 'replication_package' column exists
 if 'replication_package' not in journal_data.columns:
     journal_data['replication_package'] = 0
+if 'supplementary_package' not in journal_data.columns:
+    journal_data['supplementary_package'] = 0
 
 # Only rows where replication_package == 0 and year >= 2012
 to_download = journal_data[
     (journal_data['replication_package'].fillna(0).astype(int) == 0)
-    & (journal_data['year'] >= 2000)
+    & (journal_data['year'] >= 2024)
 ]
 
 # =========================
@@ -191,57 +186,45 @@ for orig_idx, row in to_download.iterrows():
         soup = BeautifulSoup(driver.page_source, "html.parser")
 
         doi_url = None
-        heading = soup.find("h2", string=lambda t: t and "data availability" in t.lower())
-        if heading:
-            doi_link = heading.find_next("a", href=True)
-            if doi_link and isinstance(doi_link.get("href"), str) and doi_link["href"].startswith("https://doi.org"):
-                doi_url = doi_link["href"]
+        das_header = soup.find("h2", string=lambda t: t and "data availability" in t.lower())
+        if das_header:
+            # Search for any DOI link in the next few tags after the header
+            for a in das_header.find_all_next("a", href=True, limit=10):
+                href = a["href"]
+                if href.startswith("https://doi.org"):
+                    doi_url = href
+                    break
 
         if doi_url:
             print("🔗 Found DOI:", doi_url)
         else:
-            # Fallback: try to find a "Supplementary" .zip link
+            # Fallback: try to find a "Supplementary Data" or "Data Archive" .zip link
             candidate = None
+            keywords = ("supplementary data", "data archive")
 
-            # 1) Prefer anchors whose text includes 'supplement' and whose href is a ZIP
             for a in soup.find_all("a", href=True):
                 text = (a.get_text(strip=True) or "").lower()
-                if "supplement" in text and is_zip_url(a["href"]):
+                if any(k in text for k in keywords) and is_zip_url(a["href"]):
                     candidate = a
                     break
 
-            # 2) If not found, accept any .zip on page that looks like supplementary
-            if not candidate:
-                for a in soup.find_all("a", href=True):
-                    href = a["href"]
-                    text = (a.get_text(strip=True) or "").lower()
-                    if is_zip_url(href) and ("supplement" in text or "appendix" in text or "ancillary" in text or "data" in text):
-                        candidate = a
-                        break
-
             if candidate:
                 supp_href = candidate["href"]
+
+                if not supp_href.startswith("http"):
+                    supp_href = urljoin(driver.current_url, supp_href)
+
                 print(f"🔁 No Data Availability DOI; found supplementary ZIP link: {supp_href}")
 
-                # Click it via Selenium (use exact href match)
-                try:
-                    el = driver.find_element(By.XPATH, f"//a[@href={json.dumps(supp_href)}]")
-                except Exception:
-                    # Sometimes relative vs absolute; try a contains fallback
-                    el = driver.find_element(By.XPATH, f"//a[contains(@href, {json.dumps(supp_href.split('/')[-1])})]")
-
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-                try:
-                    el.click()
-                except Exception:
-                    driver.execute_script("arguments[0].click();", el)
+                # Go directly to the ZIP URL (no need to locate & click element)
+                driver.get(supp_href)
 
                 # Wait for the ZIP to land
                 dataset_path = wait_for_file(download_folder, exts=(".zip",), timeout=240)
                 if dataset_path and os.path.exists(dataset_path):
                     safe_title = clean_title_for_filename(title)
                     new_filename = f"JPE_{safe_title}.zip"
-                    target_path = os.path.join(supplementary_folder, new_filename)
+                    target_path = os.path.join(download_folder, new_filename)
                     shutil.move(dataset_path, target_path)
                     print(f"📥 Supplementary ZIP saved locally: {target_path}")
 
@@ -257,7 +240,7 @@ for orig_idx, row in to_download.iterrows():
                     except Exception as e:
                         print(f"❌ Dropbox upload failed; keeping local file: {e}")
 
-                    journal_data.at[orig_idx, 'replication_package'] = 1
+                    journal_data.at[orig_idx, 'supplementary_package'] = 1
                     journal_data.to_excel(EXCEL_PATH, index=False)
                     time.sleep(2)
                     continue
