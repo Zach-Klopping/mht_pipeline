@@ -1,0 +1,255 @@
+#!/usr/bin/env python3
+"""
+ECONOMETRICA (ECMA) supplementary/replication ZIP downloader with Dropbox upload
+
+- Reads Excel with columns: ['title','url','coverDate','replication_package','supplementary_package']
+- Filters for rows with replication_package == 0 and year >= 2016
+- Visits each article page, finds the supplementary/replication link
+- If the link points to Zenodo → follow to direct ZIP and mark replication_package = 1
+- Otherwise → mark supplementary_package = 1
+- Uploads downloaded ZIP to Dropbox and updates Excel
+"""
+
+import os
+import time
+import shutil
+import pandas as pd
+import regex as re
+import undetected_chromedriver as uc
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
+import dropbox
+from dropbox.files import WriteMode
+
+# =========================
+# CONFIG — set your paths
+# =========================
+EXCEL_PATH = "/Users/zachklopping/Desktop/John List/MHT/Cleaned Excels/Econometrica_2000-2025.xlsx"
+DOWNLOAD_FOLDER = "/Users/zachklopping/Desktop/John List/MHT/Scrapes/ECMA Downloads"
+os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+
+# =========================
+# DROPBOX CONFIG
+# =========================
+DROPBOX_TOKEN = "sl.u.AGDAuPX1JQ_PSMdT2v9HZEbPo0d9UJnKFxDkCFETq6QLp2o5-hy1qd3YG53RGPdb7-1XPSrJVGM8-_yun7UtQjdCVOmrN9n6qqEzsoyKYOejTjZ1fR1eOdSfb8hyoiw9wCrVNE01Lu77AP9KjYbgyFHlnoSKVe2TvauWKVHDqDCpCz5Oa78C1Qkwe4A_DnMDMDLMEKXxSlbWmnTIHvGbo2RlS-6GnUO4s4zMnxN0QsqITghCMU_UCc1t_GSeXWYHA78gl5StLLisO4HsXFQhC5ovO0uoDdeeITUtToCVc9aZ6UoF9dKQEBGC4OKQWwjLOU1zfUD2SNZLw9q_JS-aMlEoFu4BWe8maqYLTpzySYi35tYohNP8PZsnc-6fx1l6FnP2UWGlauhXqd8EfAP7RF0BeNntJWAyIbXjAUCXT9mPeZx3mGeboJYUUKgTDDM1fx-9dk3wb--ey9offhFlbNoR9aPYCXgeCI2c4VPHweV1eliqO-G7z7_CbZFopUHUw1Z9T9bni8F8bwUj5DHeqS9DBF0oKao7K0cCRNkuq_j_bzVWV1wI7hPXt8IXQ1W8tSe09Fnf9QvDHDAvzlaMdsMwwaCrQSuB0fJPBtpzySeShuUQy9QW7ZUsFCT-cCiwhD0KksAovvJjrcQ10SmfXdoiuL54R_C1Qo-kKv-jUW9Z7pV2N46jTekXs9ePb4yKIrtghhF59g23Be90qdZd1BLFyNVVc2LmrjrdkC9FmhPZ2lwe1bRPjFIN7dPtslqwEBNc1AFt8w73lbtP8O1Z8pk8Us8p0-7M5i47w9kyhPkjeSjroZxWOFDUvt76W454h7n4WsPca5Ev6m9HZXVuuaKD9oRklgPjrNkPIlKiOA4T_nYt6s1rJDaeflvFYxeizcdH3YSkXC0gpHfOOJ63j7hl3jJo8viEAEX71-B7dsgciQsEr79-RQ1beUduruuXSo2Mb63zTTqbwZp50s_faWsBIWT4T92MYCTxou6BBty-d2a8TipdoNA47gh0TB4tEOFiqQiZ5hM9IMY6Fp4by-IK3Lbyg4XBb37Sw9g5QZledlPQUu3MWXp07T6WdVBqVO8Lx2uq5VncCD9vnOkfFF6yeO5UWkP0Fw_JsyKDBDKRXNq8sdEoayt1IxuY3Zsh2KItjTckk7JJBT_AOgXS5aB3mHABBXoh666Sr6w9oW4FWktCQXqRAVEcy4H7B7AxuQ7kD6DWiAHkVRqGxG8m8VJjBCg-_IHfueHrFYt79yuinZJAIwVQhaC0jwNmwUfuY-Hc2tThBTLnwueB0E3mdbqHFQnWP93iSdzA0gjSCXIUN5gnBd1lqhfWeIGrr7Dd8duCXh0uHPhpTTmMRRKnDVS22-nOaU2Vr6muTnKq1o6xrxK3Q1L__IWNA9dSACNYwwiR7sOcttQuzVFKtnDYpyP1hnb4L7tabGx9mpsxVfDiPg"  # <-- your token
+DROPBOX_FOLDER = "/MHT Data/ECMA"
+
+if not DROPBOX_TOKEN:
+    raise RuntimeError("Missing DROPBOX_TOKEN for Dropbox API.")
+
+dbx = dropbox.Dropbox(DROPBOX_TOKEN)
+CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB
+
+def _ensure_dropbox_folder(folder_path: str):
+    folder_path = (folder_path or "/").rstrip("/") or "/"
+    if folder_path == "/":
+        return
+    try:
+        dbx.files_create_folder_v2(folder_path)
+    except dropbox.exceptions.ApiError:
+        pass
+
+def _upload_file_to_dropbox(local_path: str, dropbox_folder: str, dest_name: str) -> str:
+    """Upload file (chunked if large). Returns Dropbox path."""
+    dropbox_folder = dropbox_folder.rstrip("/")
+    if not dropbox_folder.startswith("/"):
+        dropbox_folder = "/" + dropbox_folder
+    dropbox_path = f"{dropbox_folder}/{dest_name}"
+    size = os.path.getsize(local_path)
+
+    with open(local_path, "rb") as f:
+        if size <= CHUNK_SIZE:
+            dbx.files_upload(f.read(), dropbox_path, mode=WriteMode("add"), autorename=True, mute=True)
+        else:
+            start = dbx.files_upload_session_start(f.read(CHUNK_SIZE))
+            cursor = dropbox.files.UploadSessionCursor(session_id=start.session_id, offset=f.tell())
+            commit = dropbox.files.CommitInfo(path=dropbox_path, mode=WriteMode("add"), autorename=True, mute=True)
+            while f.tell() < size:
+                if (size - f.tell()) <= CHUNK_SIZE:
+                    dbx.files_upload_session_finish(f.read(CHUNK_SIZE), cursor, commit)
+                else:
+                    dbx.files_upload_session_append_v2(f.read(CHUNK_SIZE), cursor)
+                    cursor.offset = f.tell()
+    return dropbox_path
+
+_ensure_dropbox_folder(DROPBOX_FOLDER)
+
+# =========================
+# Browser setup
+# =========================
+options = uc.ChromeOptions()
+prefs = {
+    "download.default_directory": DOWNLOAD_FOLDER,
+    "plugins.always_open_pdf_externally": True,
+    "download.extensions_to_open": "applications/pdf",
+}
+options.add_experimental_option("prefs", prefs)
+driver = uc.Chrome(options=options, version_main=141)  # match your Chrome major version
+
+# =========================
+# Load data & filter
+# =========================
+journal_data = pd.read_excel(EXCEL_PATH)
+
+if "replication_package" not in journal_data.columns:
+    journal_data["replication_package"] = 0
+if "supplementary_package" not in journal_data.columns:
+    journal_data["supplementary_package"] = 0
+
+journal_data["coverDate"] = pd.to_datetime(journal_data["coverDate"], errors="coerce")
+journal_data["year"] = journal_data["coverDate"].dt.year
+
+to_download = journal_data[
+    (
+        (journal_data["replication_package"].fillna(0).astype(int) == 0)
+        & (journal_data["supplementary_package"].fillna(0).astype(int) == 0)
+    )
+    & (journal_data["year"] >= 2016)
+]
+
+# =========================
+# Helpers
+# =========================
+def wait_for_zip(download_dir: str, exts=(".pdf", ".zip"), timeout: int = 180) -> str | None:
+    start = time.time()
+    seen = {os.path.join(download_dir, f) for f in os.listdir(download_dir)}
+    while time.time() - start < timeout:
+        if any(f.endswith(".crdownload") for f in os.listdir(download_dir)):
+            time.sleep(1)
+            continue
+        files = []
+        for f in os.listdir(download_dir):
+            p = os.path.join(download_dir, f)
+            if p in seen:
+                continue
+            if not f.lower().endswith(exts):
+                continue
+            if f.startswith("ECMA_"):
+                continue
+            files.append(p)
+        if files:
+            return max(files, key=os.path.getctime)
+        time.sleep(1)
+    return None
+
+def clean_title_for_filename(title: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", str(title)).strip("_") or "untitled"
+
+# =========================
+# Main loop
+# =========================
+for orig_idx, row in to_download.iterrows():
+    try:
+        title = row.get("title", f"idx_{orig_idx}")
+        url = row.get("url")
+
+        if not isinstance(url, str) or not url.startswith("http"):
+            print(f"[{orig_idx}] Skipping (bad/missing URL): {title}")
+            continue
+
+        print(f"\n[{orig_idx}] Processing: {title}")
+        driver.get(url)
+
+        # Cookies banner
+        try:
+            WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, '//*[@id="accept-button"]'))
+            ).click()
+            print("✅ Cookies banner accepted.")
+            time.sleep(1)
+        except (TimeoutException, NoSuchElementException):
+            print("No cookies banner.")
+
+        # Pause if Cloudflare challenge shows
+        try:
+            WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.ID, "cf-challenge-running"))
+            )
+            print("⚠️ Cloudflare challenge detected. Complete in browser, then press ENTER.")
+            input()
+        except TimeoutException:
+            pass
+
+        time.sleep(3)
+
+        # Find supplementary or replication link
+        zip_elem = driver.find_element(By.CSS_SELECTOR, "p.supp_link a.button")
+        zip_href = zip_elem.get_attribute("href")
+
+        # Only proceed if the link ends with .zip (case insensitive)
+        if zip_href and zip_href.lower().endswith(".zip"):
+            zip_url = urljoin(driver.current_url, zip_href)
+            print("Found supplementary/replication URL:", zip_url)
+
+        is_zenodo = "zenodo" in zip_url.lower()
+        if is_zenodo:
+            driver.get(zip_url)
+            time.sleep(2)
+
+            # Parse Zenodo page for "Download all" button or direct .zip
+            soup = BeautifulSoup(driver.page_source, "html.parser")
+            real_link = soup.find("a", class_="ui compact mini button right floated archive-link")
+            if not real_link:
+                # fallback: any <a> with href ending in .zip
+                real_link = soup.find("a", href=re.compile(r"\.zip$", re.I))
+
+            if real_link:
+                zip_url = real_link["href"]
+                if not zip_url.startswith("http"):
+                    zip_url = urljoin(driver.current_url, zip_url)
+                print("Zenodo direct ZIP URL:", zip_url)
+            else:
+                print("⚠️ Could not find ZIP download link on Zenodo page; manual check needed.")
+                continue
+
+        # Download file
+        driver.get(zip_url)
+
+        # Wait for ZIP
+        downloaded_path = wait_for_zip(DOWNLOAD_FOLDER)
+        if not downloaded_path or not os.path.exists(downloaded_path):
+            print(f"[{orig_idx}] ❌ Download failed or timed out.")
+            continue
+
+        # Rename & save
+        safe_title = clean_title_for_filename(title)
+        new_filename = f"ECMA_{safe_title}.zip"
+        target_path = os.path.join(DOWNLOAD_FOLDER, new_filename)
+        shutil.move(downloaded_path, target_path)
+        print(f"📥 Saved: {target_path}")
+
+        # Upload to Dropbox
+        try:
+            dbx_path = _upload_file_to_dropbox(target_path, DROPBOX_FOLDER, new_filename)
+            print(f"✅ Uploaded to Dropbox: {dbx_path}")
+            try:
+                os.remove(target_path)
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"❌ Dropbox upload failed; keeping local file: {e}")
+
+        # Update Excel column depending on Zenodo or normal
+        if is_zenodo:
+            journal_data.at[orig_idx, "replication_package"] = 1
+            print(f"✅ Marked replication_package for row {orig_idx}")
+        else:
+            journal_data.at[orig_idx, "supplementary_package"] = 1
+            print(f"✅ Marked supplementary_package for row {orig_idx}")
+
+        journal_data.to_excel(EXCEL_PATH, index=False)
+        time.sleep(2)
+
+    except Exception as e:
+        print(f"[{orig_idx}] ❌ Error: {e}")
+        continue
+
+# =========================
+# Cleanup
+# =========================
+driver.quit()
+print("\n🎉 Process complete.")
