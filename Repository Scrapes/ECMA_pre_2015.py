@@ -1,8 +1,22 @@
 #!/usr/bin/env python3
 """
 ECONOMETRICA (ECMA) supplemental ZIP downloader — Dropbox integrated
-Pattern matches your working JPE script so downloads finish before page changes.
+Workflow:
+- Reads an Excel file tracking articles with columns: ['title', 'url', 'coverDate', 'replication_package', 'supplementary_package'].
+- Filters for rows where replication_package == 0 and supplementary_package == 0 and year < 2016.
+- Visits each article landing page to locate supplemental ZIP files.
+    - If a direct .zip link is found, downloads the file.
+    - Attempts to match title with Excel file title.
+- Uploads each downloaded ZIP to the appropriate Dropbox folder.
+- Updates the Excel file to mark completed rows so future runs skip them.
+Install:
+    pip install pandas beautifulsoup4 regex rapidfuzz undetected-chromedriver selenium dropbox openpyxl
+
+Note:
+    Requires Chrome (matching CHROME_MAJOR), a valid Dropbox token,
+    and an Excel file with article metadata.
 """
+
 import time
 import os
 import shutil
@@ -17,17 +31,29 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import dropbox
 from dropbox.files import WriteMode
-from rapidfuzz import fuzz, process
+from rapidfuzz import process
 
 # =========================
-# CONFIG
+# CONFIG (edit these to run)
 # =========================
-EXCEL_PATH = '/Users/zachklopping/Desktop/John List/MHT/Downloaded Excels/Fully_Downloaded_Econometrica_2000-2025.xlsx'
-DOWNLOAD_FOLDER = '/Users/zachklopping/Desktop/John List/MHT/Scrapes/ECMA Downloads'
+EXCEL_PATH        = "set path here"       
+CHROME_MAJOR      = 141                   
+DROPBOX_TOKEN     = "your_dropbox_oauth_token"  # Dropbox API token
+
+# TEMP local staging folder (downloads land here)
+DOWNLOAD_FOLDER   = "set download folder" # e.g., "/Users/you/Desktop/MHT/Scrapes/ECMA Downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-DROPBOX_TOKEN = "sl.u.AGDAuPX1JQ_PSMdT2v9HZEbPo0d9UJnKFxDkCFETq6QLp2o5-hy1qd3YG53RGPdb7-1XPSrJVGM8-_yun7UtQjdCVOmrN9n6qqEzsoyKYOejTjZ1fR1eOdSfb8hyoiw9wCrVNE01Lu77AP9KjYbgyFHlnoSKVe2TvauWKVHDqDCpCz5Oa78C1Qkwe4A_DnMDMDLMEKXxSlbWmnTIHvGbo2RlS-6GnUO4s4zMnxN0QsqITghCMU_UCc1t_GSeXWYHA78gl5StLLisO4HsXFQhC5ovO0uoDdeeITUtToCVc9aZ6UoF9dKQEBGC4OKQWwjLOU1zfUD2SNZLw9q_JS-aMlEoFu4BWe8maqYLTpzySYi35tYohNP8PZsnc-6fx1l6FnP2UWGlauhXqd8EfAP7RF0BeNntJWAyIbXjAUCXT9mPeZx3mGeboJYUUKgTDDM1fx-9dk3wb--ey9offhFlbNoR9aPYCXgeCI2c4VPHweV1eliqO-G7z7_CbZFopUHUw1Z9T9bni8F8bwUj5DHeqS9DBF0oKao7K0cCRNkuq_j_bzVWV1wI7hPXt8IXQ1W8tSe09Fnf9QvDHDAvzlaMdsMwwaCrQSuB0fJPBtpzySeShuUQy9QW7ZUsFCT-cCiwhD0KksAovvJjrcQ10SmfXdoiuL54R_C1Qo-kKv-jUW9Z7pV2N46jTekXs9ePb4yKIrtghhF59g23Be90qdZd1BLFyNVVc2LmrjrdkC9FmhPZ2lwe1bRPjFIN7dPtslqwEBNc1AFt8w73lbtP8O1Z8pk8Us8p0-7M5i47w9kyhPkjeSjroZxWOFDUvt76W454h7n4WsPca5Ev6m9HZXVuuaKD9oRklgPjrNkPIlKiOA4T_nYt6s1rJDaeflvFYxeizcdH3YSkXC0gpHfOOJ63j7hl3jJo8viEAEX71-B7dsgciQsEr79-RQ1beUduruuXSo2Mb63zTTqbwZp50s_faWsBIWT4T92MYCTxou6BBty-d2a8TipdoNA47gh0TB4tEOFiqQiZ5hM9IMY6Fp4by-IK3Lbyg4XBb37Sw9g5QZledlPQUu3MWXp07T6WdVBqVO8Lx2uq5VncCD9vnOkfFF6yeO5UWkP0Fw_JsyKDBDKRXNq8sdEoayt1IxuY3Zsh2KItjTckk7JJBT_AOgXS5aB3mHABBXoh666Sr6w9oW4FWktCQXqRAVEcy4H7B7AxuQ7kD6DWiAHkVRqGxG8m8VJjBCg-_IHfueHrFYt79yuinZJAIwVQhaC0jwNmwUfuY-Hc2tThBTLnwueB0E3mdbqHFQnWP93iSdzA0gjSCXIUN5gnBd1lqhfWeIGrr7Dd8duCXh0uHPhpTTmMRRKnDVS22-nOaU2Vr6muTnKq1o6xrxK3Q1L__IWNA9dSACNYwwiR7sOcttQuzVFKtnDYpyP1hnb4L7tabGx9mpsxVfDiPg"  # <-- your token
-DROPBOX_FOLDER = "/MHT Data/ECMA"
+# =========================
+# Already Set Config (do NOT edit below)
+# =========================
+URL_COL           = "url"                  # Excel column with article landing page URL
+TITLE_COL         = "title"                # Excel column with article title
+FLAG_SUPP_COL     = "supplementary_package" # 0 = needs supplemental zip, 1 = done
+START_YEAR        = 2000                  # first year to scan
+END_YEAR          = 2015                  # last year to scan
+DROPBOX_FOLDER    = "/MHT/ECMA Pre 2015 Supplementary Packages"       # Dropbox destination root (must start with "/")
+
 if not DROPBOX_TOKEN:
     raise RuntimeError("Missing DROPBOX_TOKEN")
 
@@ -78,11 +104,11 @@ driver = uc.Chrome(options=options, version_main=141)
 journal_data = pd.read_excel(EXCEL_PATH)
 journal_data["coverDate"] = pd.to_datetime(journal_data["coverDate"], errors="coerce")
 journal_data["year"] = journal_data["coverDate"].dt.year
-if "supplementary_package" not in journal_data.columns:
-    journal_data["supplementary_package"] = 0
+if FLAG_SUPP_COL not in journal_data.columns:
+    journal_data[FLAG_SUPP_COL] = 0
 
 to_download = journal_data[
-    journal_data["supplementary_package"].fillna(0).astype(int) == 0
+    journal_data[FLAG_SUPP_COL].fillna(0).astype(int) == 0
 ]
 
 # =========================
@@ -116,10 +142,7 @@ def wait_for_file(download_dir: str, exts=(".zip",), timeout=600) -> str | None:
 # =========================
 # Main loop (year-month)
 # =========================
-start_year = 2015
-end_year = 2025
-
-for year in range(start_year, end_year + 1):
+for year in range(START_YEAR, END_YEAR + 1):
     for month in range(1, 13, 2):  # odd months
         url = f"https://www.econometricsociety.org/publications/econometrica/browse/supplemental-materials/issue-supplemental-materials/{year}/{month:02d}"
         print(f"\nProcessing {year}-{month:02d}: {url}")
@@ -175,29 +198,43 @@ for year in range(start_year, end_year + 1):
             shutil.move(file_path, target)
             print(f"📥 Saved: {target}")
 
+            def normalize(s: str) -> str:
+                s = str(s).lower()
+                s = re.sub(r'[_\-]+', ' ', s)       # underscores and hyphens to spaces
+                s = re.sub(r'[^\w\s]', '', s)       # drop punctuation
+                s = re.sub(r'\s+', ' ', s).strip()  # collapse spaces
+                return s
+
+            # --- fuzzy match ---
+            parsed = normalize(rec["heading"])
+            choices = [normalize(t) for t in journal_data["title"].astype(str)]
+            best = process.extractOne(parsed, choices)
+
+            # choose the Dropbox destination depending on match
+            if best and best[1] >= 90:
+                match_str, score, idx = best
+                norm_titles = journal_data["title"].astype(str).apply(normalize)
+                journal_data.loc[norm_titles == match_str, FLAG_SUPP_COL] = 1
+                print(f"✅ Marked supplementary for '{match_str}' (score {score})")
+                dropbox_dest = DROPBOX_FOLDER
+            else:
+                print(f"⚠️ No good match for: {parsed}")
+                # create /No Match subfolder inside your main ECMA folder
+                dropbox_dest = f"{DROPBOX_FOLDER}/No Match"
+                _ensure_dropbox_folder(dropbox_dest)
+
+            # upload to the chosen Dropbox folder
             try:
-                dbx_path = _upload_file_to_dropbox(target, DROPBOX_FOLDER, new_name)
+                dbx_path = _upload_file_to_dropbox(target, dropbox_dest, new_name)
                 print(f"✅ Uploaded to Dropbox: {dbx_path}")
                 os.remove(target)
             except Exception as e:
                 print(f"Dropbox upload failed: {e}")
 
-            # Fuzzy match & mark
-            parsed = rec["heading"].lower().strip()
-            choices = journal_data["title"].astype(str).str.lower().str.strip().tolist()
-            best = process.extractOne(parsed, choices)
+            # only save Excel if we matched
             if best and best[1] >= 90:
-                match_str, score, idx = best
-                journal_data.loc[
-                    journal_data["title"].str.lower().str.strip() == match_str,
-                    "supplementary_package"
-                ] = 1
-                print(f"✅ Marked supplementary for '{match_str}' (score {score})")
-            else:
-                print(f"⚠️ No good match for: {parsed}")
-
-            journal_data.to_excel(EXCEL_PATH, index=False)
-            time.sleep(2)  # pause before next download
+                journal_data.to_excel(EXCEL_PATH, index=False)
+            time.sleep(2)
 
 # =========================
 # Cleanup

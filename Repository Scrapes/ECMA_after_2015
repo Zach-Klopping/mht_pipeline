@@ -2,12 +2,20 @@
 """
 ECONOMETRICA (ECMA) supplementary/replication ZIP downloader with Dropbox upload
 
-- Reads Excel with columns: ['title','url','coverDate','replication_package','supplementary_package']
-- Filters for rows with replication_package == 0 and year >= 2016
-- Visits each article page, finds the supplementary/replication link
-- If the link points to Zenodo → follow to direct ZIP and mark replication_package = 1
-- Otherwise → mark supplementary_package = 1
-- Uploads downloaded ZIP to Dropbox and updates Excel
+Workflow:
+- Reads an Excel file with columns: ['title', 'url', 'coverDate', 'replication_package', 'supplementary_package'].
+- Filters for rows where replication_package == 0 and supplementary_package == 0 and year >= 2016.
+- Visits each article landing page and tries to find a supplementary or replication link.
+    - If link points directly to a ZIP: download and mark supplementary_package = 1.
+    - If link points to Zenodo: follow to find direct ZIP and mark replication_package = 1.
+- Uploads the downloaded ZIP file to Dropbox.
+- Updates the Excel file so future runs skip completed rows.
+Install:
+    pip install pandas beautifulsoup4 regex undetected-chromedriver selenium dropbox openpyxl
+
+Note:
+    Requires Chrome (matching CHROME_MAJOR), a valid Dropbox token,
+    and an Excel file with article metadata.
 """
 
 import os
@@ -26,25 +34,35 @@ import dropbox
 from dropbox.files import WriteMode
 
 # =========================
-# CONFIG — set your paths
+# USER CONFIG — edit these
 # =========================
-EXCEL_PATH = "/Users/zachklopping/Desktop/John List/MHT/Cleaned Excels/Econometrica_2000-2025.xlsx"
-DOWNLOAD_FOLDER = "/Users/zachklopping/Desktop/John List/MHT/Scrapes/ECMA Downloads"
+EXCEL_PATH = "set here"  # Excel file tracking downloads
+DOWNLOAD_FOLDER = "set here"                          # Local staging folder for downloaded ZIPs
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
+CHROME_MAJOR = 141
 # =========================
-# DROPBOX CONFIG
+# INTERNAL SETTINGS (no need to edit)
 # =========================
-DROPBOX_TOKEN = "sl.u.AGDAuPX1JQ_PSMdT2v9HZEbPo0d9UJnKFxDkCFETq6QLp2o5-hy1qd3YG53RGPdb7-1XPSrJVGM8-_yun7UtQjdCVOmrN9n6qqEzsoyKYOejTjZ1fR1eOdSfb8hyoiw9wCrVNE01Lu77AP9KjYbgyFHlnoSKVe2TvauWKVHDqDCpCz5Oa78C1Qkwe4A_DnMDMDLMEKXxSlbWmnTIHvGbo2RlS-6GnUO4s4zMnxN0QsqITghCMU_UCc1t_GSeXWYHA78gl5StLLisO4HsXFQhC5ovO0uoDdeeITUtToCVc9aZ6UoF9dKQEBGC4OKQWwjLOU1zfUD2SNZLw9q_JS-aMlEoFu4BWe8maqYLTpzySYi35tYohNP8PZsnc-6fx1l6FnP2UWGlauhXqd8EfAP7RF0BeNntJWAyIbXjAUCXT9mPeZx3mGeboJYUUKgTDDM1fx-9dk3wb--ey9offhFlbNoR9aPYCXgeCI2c4VPHweV1eliqO-G7z7_CbZFopUHUw1Z9T9bni8F8bwUj5DHeqS9DBF0oKao7K0cCRNkuq_j_bzVWV1wI7hPXt8IXQ1W8tSe09Fnf9QvDHDAvzlaMdsMwwaCrQSuB0fJPBtpzySeShuUQy9QW7ZUsFCT-cCiwhD0KksAovvJjrcQ10SmfXdoiuL54R_C1Qo-kKv-jUW9Z7pV2N46jTekXs9ePb4yKIrtghhF59g23Be90qdZd1BLFyNVVc2LmrjrdkC9FmhPZ2lwe1bRPjFIN7dPtslqwEBNc1AFt8w73lbtP8O1Z8pk8Us8p0-7M5i47w9kyhPkjeSjroZxWOFDUvt76W454h7n4WsPca5Ev6m9HZXVuuaKD9oRklgPjrNkPIlKiOA4T_nYt6s1rJDaeflvFYxeizcdH3YSkXC0gpHfOOJ63j7hl3jJo8viEAEX71-B7dsgciQsEr79-RQ1beUduruuXSo2Mb63zTTqbwZp50s_faWsBIWT4T92MYCTxou6BBty-d2a8TipdoNA47gh0TB4tEOFiqQiZ5hM9IMY6Fp4by-IK3Lbyg4XBb37Sw9g5QZledlPQUu3MWXp07T6WdVBqVO8Lx2uq5VncCD9vnOkfFF6yeO5UWkP0Fw_JsyKDBDKRXNq8sdEoayt1IxuY3Zsh2KItjTckk7JJBT_AOgXS5aB3mHABBXoh666Sr6w9oW4FWktCQXqRAVEcy4H7B7AxuQ7kD6DWiAHkVRqGxG8m8VJjBCg-_IHfueHrFYt79yuinZJAIwVQhaC0jwNmwUfuY-Hc2tThBTLnwueB0E3mdbqHFQnWP93iSdzA0gjSCXIUN5gnBd1lqhfWeIGrr7Dd8duCXh0uHPhpTTmMRRKnDVS22-nOaU2Vr6muTnKq1o6xrxK3Q1L__IWNA9dSACNYwwiR7sOcttQuzVFKtnDYpyP1hnb4L7tabGx9mpsxVfDiPg"  # <-- your token
-DROPBOX_FOLDER = "/MHT Data/ECMA"
+DROPBOX_TOKEN = "your_dropbox_oauth_token"                           # Dropbox API token (keep secret)
+DROPBOX_FOLDER_REPL = "/MHT/ECMA Replication Packages"
+DROPBOX_FOLDER_SUPP = "/MHT/ECMA Supplementary Packages"
+
+URL_COL           = "url"                   # Excel column with article landing page URL
+TITLE_COL         = "title"                 # Excel column with article title
+FLAG_REPL_COL     = "replication_package"   # 0 = needs dataset (Dataverse), 1 = done
+FLAG_SUPP_COL     = "supplementary_package" # 0 = needs supplementary zip, 1 = done
+
+YEAR_MIN = 2016   # only process rows with coverDate.year >= YEAR_MIN
+CHUNK_SIZE = 8 * 1024 * 1024  # Dropbox upload chunk size (8 MB)
 
 if not DROPBOX_TOKEN:
     raise RuntimeError("Missing DROPBOX_TOKEN for Dropbox API.")
 
 dbx = dropbox.Dropbox(DROPBOX_TOKEN)
-CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB
 
 def _ensure_dropbox_folder(folder_path: str):
+    """Create Dropbox folder if it doesn't exist (no error if it does)."""
     folder_path = (folder_path or "/").rstrip("/") or "/"
     if folder_path == "/":
         return
@@ -54,7 +72,7 @@ def _ensure_dropbox_folder(folder_path: str):
         pass
 
 def _upload_file_to_dropbox(local_path: str, dropbox_folder: str, dest_name: str) -> str:
-    """Upload file (chunked if large). Returns Dropbox path."""
+    """Upload a file to Dropbox (chunked for large files). Returns the Dropbox path."""
     dropbox_folder = dropbox_folder.rstrip("/")
     if not dropbox_folder.startswith("/"):
         dropbox_folder = "/" + dropbox_folder
@@ -76,45 +94,46 @@ def _upload_file_to_dropbox(local_path: str, dropbox_folder: str, dest_name: str
                     cursor.offset = f.tell()
     return dropbox_path
 
-_ensure_dropbox_folder(DROPBOX_FOLDER)
-
+_ensure_dropbox_folder(DROPBOX_FOLDER_REPL)
+_ensure_dropbox_folder(DROPBOX_FOLDER_SUPP)
 # =========================
 # Browser setup
 # =========================
 options = uc.ChromeOptions()
 prefs = {
     "download.default_directory": DOWNLOAD_FOLDER,
-    "plugins.always_open_pdf_externally": True,
+    "plugins.always_open_pdf_externally": True,  # don’t preview PDFs, download instead
     "download.extensions_to_open": "applications/pdf",
 }
 options.add_experimental_option("prefs", prefs)
-driver = uc.Chrome(options=options, version_main=141)  # match your Chrome major version
+driver = uc.Chrome(options=options, version_main=CHROME_MAJOR)  # set to your Chrome major version
 
 # =========================
-# Load data & filter
+# Load data & filter rows to process
 # =========================
 journal_data = pd.read_excel(EXCEL_PATH)
 
-if "replication_package" not in journal_data.columns:
-    journal_data["replication_package"] = 0
-if "supplementary_package" not in journal_data.columns:
-    journal_data["supplementary_package"] = 0
+# Ensure required columns exist
+if FLAG_REPL_COL not in journal_data.columns:
+    journal_data[FLAG_REPL_COL] = 0
+if FLAG_SUPP_COL not in journal_data.columns:
+    journal_data[FLAG_SUPP_COL] = 0
 
 journal_data["coverDate"] = pd.to_datetime(journal_data["coverDate"], errors="coerce")
 journal_data["year"] = journal_data["coverDate"].dt.year
 
+# Only rows needing download (both flags 0) and year >= YEAR_MIN
 to_download = journal_data[
-    (
-        (journal_data["replication_package"].fillna(0).astype(int) == 0)
-        & (journal_data["supplementary_package"].fillna(0).astype(int) == 0)
-    )
-    & (journal_data["year"] >= 2016)
+    (journal_data[FLAG_REPL_COL].fillna(0).astype(int) == 0)
+    & (journal_data[FLAG_SUPP_COL].fillna(0).astype(int) == 0)
+    & (journal_data["year"] >= YEAR_MIN)
 ]
 
 # =========================
-# Helpers
+# Helper functions
 # =========================
 def wait_for_zip(download_dir: str, exts=(".pdf", ".zip"), timeout: int = 180) -> str | None:
+    """Wait for a new PDF/ZIP file to appear and finish downloading in the folder."""
     start = time.time()
     seen = {os.path.join(download_dir, f) for f in os.listdir(download_dir)}
     while time.time() - start < timeout:
@@ -128,7 +147,7 @@ def wait_for_zip(download_dir: str, exts=(".pdf", ".zip"), timeout: int = 180) -
                 continue
             if not f.lower().endswith(exts):
                 continue
-            if f.startswith("ECMA_"):
+            if f.startswith("ECMA_"):  # skip already renamed files
                 continue
             files.append(p)
         if files:
@@ -137,6 +156,7 @@ def wait_for_zip(download_dir: str, exts=(".pdf", ".zip"), timeout: int = 180) -
     return None
 
 def clean_title_for_filename(title: str) -> str:
+    """Make a safe filename from an article title."""
     return re.sub(r"[^A-Za-z0-9]+", "_", str(title)).strip("_") or "untitled"
 
 # =========================
@@ -154,7 +174,7 @@ for orig_idx, row in to_download.iterrows():
         print(f"\n[{orig_idx}] Processing: {title}")
         driver.get(url)
 
-        # Cookies banner
+        # Try to accept cookie banner if present
         try:
             WebDriverWait(driver, 5).until(
                 EC.element_to_be_clickable((By.XPATH, '//*[@id="accept-button"]'))
@@ -164,7 +184,7 @@ for orig_idx, row in to_download.iterrows():
         except (TimeoutException, NoSuchElementException):
             print("No cookies banner.")
 
-        # Pause if Cloudflare challenge shows
+        # Pause if Cloudflare challenge appears
         try:
             WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located((By.ID, "cf-challenge-running"))
@@ -176,25 +196,41 @@ for orig_idx, row in to_download.iterrows():
 
         time.sleep(3)
 
-        # Find supplementary or replication link
-        zip_elem = driver.find_element(By.CSS_SELECTOR, "p.supp_link a.button")
-        zip_href = zip_elem.get_attribute("href")
+        # Find supplementary/replication links on page
+        zip_url = None
+        zip_elems = driver.find_elements(By.CSS_SELECTOR, "p.supp_link a.button")
 
-        # Only proceed if the link ends with .zip (case insensitive)
-        if zip_href and zip_href.lower().endswith(".zip"):
-            zip_url = urljoin(driver.current_url, zip_href)
-            print("Found supplementary/replication URL:", zip_url)
+        if zip_elems:
+            for el in zip_elems:
+                href = el.get_attribute("href")
+                if not href:
+                    continue
+                href = urljoin(driver.current_url, href)
 
+                if href.lower().endswith(".zip"):
+                    zip_url = href
+                    print("Found direct ZIP:", zip_url)
+                    break
+
+                if "zenodo" in href.lower():
+                    zip_url = href
+                    print("Found Zenodo link:", zip_url)
+                    break
+        else:
+            print("No supplementary/replication link found.")
+
+        if not zip_url:
+            print(f"[{orig_idx}] ❌ No ZIP/Zenodo link found; skipping.")
+            continue
+
+        # If Zenodo: open and look for a direct ZIP button
         is_zenodo = "zenodo" in zip_url.lower()
         if is_zenodo:
             driver.get(zip_url)
             time.sleep(2)
-
-            # Parse Zenodo page for "Download all" button or direct .zip
             soup = BeautifulSoup(driver.page_source, "html.parser")
             real_link = soup.find("a", class_="ui compact mini button right floated archive-link")
             if not real_link:
-                # fallback: any <a> with href ending in .zip
                 real_link = soup.find("a", href=re.compile(r"\.zip$", re.I))
 
             if real_link:
@@ -209,13 +245,13 @@ for orig_idx, row in to_download.iterrows():
         # Download file
         driver.get(zip_url)
 
-        # Wait for ZIP
+        # Wait for download to complete
         downloaded_path = wait_for_zip(DOWNLOAD_FOLDER)
         if not downloaded_path or not os.path.exists(downloaded_path):
             print(f"[{orig_idx}] ❌ Download failed or timed out.")
             continue
 
-        # Rename & save
+        # Rename to safe filename
         safe_title = clean_title_for_filename(title)
         new_filename = f"ECMA_{safe_title}.zip"
         target_path = os.path.join(DOWNLOAD_FOLDER, new_filename)
@@ -224,7 +260,8 @@ for orig_idx, row in to_download.iterrows():
 
         # Upload to Dropbox
         try:
-            dbx_path = _upload_file_to_dropbox(target_path, DROPBOX_FOLDER, new_filename)
+            dest_folder = DROPBOX_FOLDER_REPL if is_zenodo else DROPBOX_FOLDER_SUPP
+            dbx_path = _upload_file_to_dropbox(target_path, dest_folder, new_filename)
             print(f"✅ Uploaded to Dropbox: {dbx_path}")
             try:
                 os.remove(target_path)
@@ -233,13 +270,13 @@ for orig_idx, row in to_download.iterrows():
         except Exception as e:
             print(f"❌ Dropbox upload failed; keeping local file: {e}")
 
-        # Update Excel column depending on Zenodo or normal
+        # Update Excel depending on source
         if is_zenodo:
-            journal_data.at[orig_idx, "replication_package"] = 1
-            print(f"✅ Marked replication_package for row {orig_idx}")
+            journal_data.at[orig_idx, FLAG_REPL_COL] = 1
+            print(f"✅ Marked {FLAG_REPL_COL} for row {orig_idx}")
         else:
-            journal_data.at[orig_idx, "supplementary_package"] = 1
-            print(f"✅ Marked supplementary_package for row {orig_idx}")
+            journal_data.at[orig_idx, FLAG_SUPP_COL] = 1
+            print(f"✅ Marked {FLAG_SUPP_COL} for row {orig_idx}")
 
         journal_data.to_excel(EXCEL_PATH, index=False)
         time.sleep(2)
