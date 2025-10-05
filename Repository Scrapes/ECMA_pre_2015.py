@@ -36,12 +36,11 @@ from rapidfuzz import process
 # =========================
 # CONFIG (edit these to run)
 # =========================
-EXCEL_PATH        = "set path here"       
+EXCEL_PATH = '/Users/zachklopping/Desktop/John List/MHT/Downloaded Excels/Fully_Downloaded_Econometrica_2000-2025.xlsx'  # Excel file tracking downloads
 CHROME_MAJOR      = 141                   
-DROPBOX_TOKEN     = "your_dropbox_oauth_token"  # Dropbox API token
+DROPBOX_TOKEN     = 'sl.u.AGBaVsyRlcarZeTQlSOJzsYXbqO9S14JzP8tYzRriBoOHalEwpE_lsi-HAn4x6i2CKrfq2C8BWK0ztRZockHfPwF4Q7Ssd3H8iuruvg2pUVjJnDk0HqUmNa_fwZhXsv0Hwcf1izp3u6Ec4Kl0eZ5miBe-lNGQ2AHUu1uBZFLRKDpw1jJOCCoOrfnj4u8FXaGcmiRslH-r--2NUlQ6dG8ZAzOH4Z__aQtRu2hdtSN87621Ib-2ZXJyyDCoS7ugf5RHYdC-drjLqhUeDS-TonRjfdqAfqr1yX2wqVHlL509DLfDYQcFGCQQBqFLJN7symgKVnfT8Z8Cup5eNDFyk2FtPmekP-hzPJJ6InNBnVweAh6yFDg7dsv2HQrE-NpRtjbJjy1BSAtQXTj8-IfOCj4cFkKk_pbzAvvcuKq7FGnhV_0hZsakqNmmI6oX41M3udUiPnJGfa3Tm88yQBlF4VoAFip4luA6ZBqS-ezzmXW_DL2qpy0I19tfL_mAfpSBohQk6VdvpxISS7SVmTFqNEU3G6mq8i5O2OtR9ngO2PfUU3BKYr2-E8QTE6S91px8M1iTf7ca7NNs7WJKEpFpz9Yw398guSC837ej6vvWl8Pe_wJDVA6JuVMmnGpF4SiQ3NvUBM3NHFpkwXmoJbRXa8K2G25IO7tAm9EFZmwIjCvellwhaGxDA2r64gWFycpjmGHJrszlHcbYRqui0gi8ULNgQsN8HKHBIopTczJJ93fKM-aC4DobaYwnwYtodUz-mE0Jfw3snZSEQEe7ozz69HhIj1wpl7oh_ZGfgckAgRiQwEA736XGoG5oAo4dvwkL5eexCuEnGp0Ebq44qsYcV1m5z5weeXJY7SqVDv4E0cItLfXXSQ39s6KNIKiB86JSxZ74NEdxr4GOsavR30l3_91P_7zw72i1qMcl0cvh6JJfT8GSdbMI83-pcApojutY3zHWrqfbfnxDUQwcb7xZcMg9Z3zB5NBYogVzb3XEAjCTp_SAwgcBad_PuaR7Gj3QiLzFwUUTYCoxf33tvCGVWRLF__3V2_WvV5O666btbm_oSHV0X5Jf2Qxc4mqodYLk7-3_IUr2smW7B-Lt9PY4BFPhhmAOgSEzh9jM-m7RpiRMAi3oevT9OuVvoxfXw8Ry7QiaAglstA2oVQMjRKQKmSOUHplzavP0CJ3ml-A2zGaiqhlJ3bKCsGyUg6AJYB6mdjS2HcNopVp2V_Nwsw71lTaZ5HEtrE6sIP0_J79J827lj9WiK0It_VARctAeEfKSrTCwou6oUtUBXozmE5dPMUGwBM77lHoRWCm9GX0e6jvrAroLxgUnV26mie9qknwWRa_Yevw_Na3PRMo17RxIDfmzM2BhYRlgWgyvzEzmTAEwfatYikYrkqRa8iNMKOx1ks6ynb8iUux6V15QOVt_sSR7Qmt8EXAd2Gv8Gcbb6xh53iQvA'  # Dropbox API token
 
-# TEMP local staging folder (downloads land here)
-DOWNLOAD_FOLDER   = "set download folder" # e.g., "/Users/you/Desktop/MHT/Scrapes/ECMA Downloads"
+DOWNLOAD_FOLDER = '/Users/zachklopping/Desktop/John List/MHT/Scrapes/ECMA Downloads'                         # Local staging folder for downloaded ZIPs
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 # =========================
@@ -50,7 +49,7 @@ os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 URL_COL           = "url"                  # Excel column with article landing page URL
 TITLE_COL         = "title"                # Excel column with article title
 FLAG_SUPP_COL     = "supplementary_package" # 0 = needs supplemental zip, 1 = done
-START_YEAR        = 2000                  # first year to scan
+START_YEAR        = 2010                  # first year to scan
 END_YEAR          = 2015                  # last year to scan
 DROPBOX_FOLDER    = "/MHT/ECMA Pre 2015 Supplementary Packages"       # Dropbox destination root (must start with "/")
 
