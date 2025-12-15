@@ -31,7 +31,7 @@ profile = {
 options.add_experimental_option("prefs", profile)
 
 # Start undetected Chrome driver
-driver = uc.Chrome(options=options, version_main=139)  # 👈 match your Chrome major version
+driver = uc.Chrome(options=options, version_main=139)  # match your Chrome version
 
 # =========================
 # Load and filter data
@@ -109,10 +109,10 @@ for orig_idx, row in to_download.iterrows():
             WebDriverWait(driver, 5).until(
                 EC.element_to_be_clickable((By.XPATH, '//*[@id="cookie-notice"]/p[3]/a[2]'))
             ).click()
-            print("✅ Cookie banner accepted.")
+            print("Cookie banner accepted.")
             time.sleep(1)
         except (TimeoutException, NoSuchElementException):
-            print("ℹ️ No cookie banner appeared.")
+            print("No cookie banner appeared.")
 
         time.sleep(5)
 
@@ -127,7 +127,7 @@ for orig_idx, row in to_download.iterrows():
             print(f"🔗 ePDF URL found: {pdf_url}")
             driver.get(pdf_url)
         except Exception as e:
-            print(f"❌ Could not find ePDF link: {e}")
+            print(f" Could not find ePDF link: {e}")
             continue
 
         # Click download menu and then direct download
@@ -168,11 +168,11 @@ for orig_idx, row in to_download.iterrows():
         time.sleep(2)
 
     except Exception as e:
-        print(f"[{orig_idx}] ❌ Error: {e}")
+        print(f"[{orig_idx}] Error: {e}")
         continue
 
 # =========================
 # Cleanup
 # =========================
 driver.quit()
-print("\n🎉 All done.")
+print("Done.")
